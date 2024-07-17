@@ -100,7 +100,6 @@ def gemm(
         workspace.shape[0],
         accumulate,
         False,  # use_split_accumulator
-        0,  # math_sm_count
     )
 
     return out, grad_bias, gelu_input
@@ -184,7 +183,6 @@ def fp8_gemm(
         workspace.shape[0],
         accumulate,
         use_split_accumulator,
-        0,  # math_sm_count
     )
 
     return out, gelu_input
