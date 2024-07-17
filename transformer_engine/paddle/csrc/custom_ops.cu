@@ -10,6 +10,8 @@
 
 #include "common.h"
 #include "common/common.h"
+#include "common/util/system.h"
+#include "common/util/cuda_runtime.h"
 #include "paddle/phi/backends/gpu/cuda/cuda_graph.h"
 
 namespace transformer_engine {
@@ -165,8 +167,12 @@ void te_gemm(const paddle::Tensor &A, const paddle::optional<paddle::Tensor> &A_
              paddle::optional<paddle::Tensor> &pre_gelu_out, paddle::Tensor &workspace,  // NOLINT
              int64_t A_index, int64_t B_index, int64_t D_index, int64_t A_type, int64_t B_type,
              int64_t D_type, int64_t bias_type, bool transa, bool transb, bool grad,
-             int64_t workspace_size, bool accumulate, bool use_split_accumulator,
-             int64_t math_sm_count) {
+             int64_t workspace_size, bool accumulate, bool use_split_accumulator) {
+  // Set an external SM Margin to all the GEMMs.
+  // This comes in handy when DP is overlapped with GEMMs
+  const int sm_count = transformer_engine::cuda::sm_count();
+  int math_sm_count = sm_count - transformer_engine::getenv<int>("NVTE_EXT_MARGIN_SM", sm_count);
+
   auto te_A = MakeNvteTensor(
       const_cast<void *>(A.data()), GetShapeArray(A), Int2NvteDType(A_type), nullptr, nullptr,
       const_cast<void *>(GetOptionalDataPtr<float>(A_scale_inverse, A_index)));
@@ -1502,7 +1508,7 @@ PD_BUILD_OP(te_gemm)
     .Attrs({"A_index: int64_t", "B_index: int64_t", "D_index: int64_t", "A_type: int64_t",
             "B_type: int64_t", "D_type: int64_t", "bias_type: int64_t", "transa: bool",
             "transb: bool", "grad: bool", "workspace_size: int64_t", "accumulate: bool",
-            "use_split_accumulator: bool", "math_sm_count: int64_t"})
+            "use_split_accumulator: bool"})
     .SetInplaceMap({{"_D", "D"},
                     {paddle::Optional("_D_scale"), paddle::Optional("D_scale")},
                     {paddle::Optional("_D_amax"), paddle::Optional("D_amax")},
