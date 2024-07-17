@@ -24,6 +24,13 @@ class TestParallelLinear(TestDistributed):
         """Tests linear with tensor parallel in BF16"""
         self.run_2gpu(str(test_root / "parallel_tests" / "linear_tp.py"))
 
+class TestParallelLinearTpCommOverlap(TestDistributed):
+    """For supported nn layers, test tp-comm-overlap feature with tensor parallel+sequence parallel in BF16"""
+    @unittest.skipIf(not is_devices_enough(2), "TestTpCommOverlap needs at least 2 GPUs")
+    def test_linear_(self):
+        """Tests GEMM+AG/GEMM+RS on te.Linear"""
+        self.run_2gpu(str(test_root / "parallel_tests" / "linear_tp_comm_overlap.py"))
+
 
 class TestParallelLayerNormLinear(TestDistributed):
     """Test LayerNormLinear in Parallel mode"""

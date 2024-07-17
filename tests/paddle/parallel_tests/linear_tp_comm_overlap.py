@@ -1,7 +1,7 @@
-# Copyright (c) 2022-2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 # See LICENSE for license information.
-"""Unittest for Linear layer in tensor parallel"""
+"""Unittest for Linear layer in tensor+sequence parallel with UB gemm overlap (tp-comm-overlap)"""
 
 import unittest
 
@@ -64,6 +64,7 @@ class _TestLinearTpBase(unittest.TestCase):
             total_out = mp_ops._c_concat(out, group=self.tp_group)
         else:
             total_out = out
+        print(f'rank:{paddle.distributed.get_rank()} out={out}')#TODO: DEBUG
         loss = total_out.mean()
         loss.backward()
         optimizer.step()
@@ -94,60 +95,51 @@ class _TestLinearTpBase(unittest.TestCase):
         layer_pd.weight.copy_(total_weight.T, True)
         return layer_pd
 
-class TestLinearTp(_TestLinearTpBase):
+##############################################################################
+# Unittest for Linear layer in tp-comm-overlap, 
+# (which imply both tensor parallel + sequence parallel is applied as 'comm')
+##############################################################################
+class TestLinearUbOverlapRS(_TestLinearTpBase):
     """Tests Linear layer with column/row parallelism in BF16"""
-    
-    def test_column_parallel_layer(self):
-        """Tests column parallel linear"""
+    def set_attr(self):
+        """Set test configs"""
+        self.batch_size = 16
+        self.in_features = 64*4
+        self.out_features = 64
+        self.global_dtype = "bfloat16"
+        self.rtol = 1.6e-2
+        self.atol = 1e-5
+        self.fp8 = False
+        self.sequence_parallel = True
+        
+    def test_fc2_layer(self):
+        """Tests fc2(row parallel linear) overlapping with RS(Reduce scatter)"""
         set_random_seed(1024)
-        layer_te = te.Linear(
-            self.in_features,
-            self.out_features,
-            parallel_mode="column",
-            sequence_parallel=self.sequence_parallel,
-        )
-        layer_pd = self._create_pd_linear(layer_te, axis=0)
-
-        assert_shape(
-            layer_te.weight, [self.out_features // self.model_parallel_size, self.in_features]
-        )
-        assert_shape(layer_te.bias, [self.out_features // self.model_parallel_size])
-
-        optimizer_te = paddle.optimizer.SGD(learning_rate=0.001, parameters=layer_te.parameters())
-        optimizer_pd = paddle.optimizer.SGD(learning_rate=0.001, parameters=layer_pd.parameters())
-
-        layer_te = fleet.distributed_model(layer_te)
-        optimizer_te = fleet.distributed_optimizer(optimizer_te)
-
-        for _ in range(5):
-            inp = paddle.uniform([self.batch_size, self.in_features], self.global_dtype)
-            with te.fp8_autocast(enabled=self.fp8):
-                loss_tp, grad_input = self._train_one_step(
-                    layer_te,
-                    inp,
-                    optimizer_te,
-                    split_input="row" if self.sequence_parallel else "none",
-                    gather_output=True,
-                )
-            loss_ref, grad_input_ref = self._train_one_step(layer_pd, inp, optimizer_pd)
-            assert_allclose(loss_tp, loss_ref, rtol=self.rtol, atol=self.atol)
-            assert_allclose(grad_input, grad_input_ref, rtol=self.rtol, atol=self.atol)
-
-    def test_row_parallel_layer(self):
-        """Tests row parallel linear"""
-        set_random_seed(1024)
+        
+        FFN = self.in_features
+        H = self.out_features
+        
+        te.initialize_ub([self.batch_size, H], paddle.bfloat16, self.model_parallel_size)    
+        
         layer_te = te.Linear(
             self.in_features,
             self.out_features,
             parallel_mode="row",
             sequence_parallel=self.sequence_parallel,
+            ub_overlap_rs = True,
+            ub_overlap_ag = True,
+            ub_name=te.UbGEMM.fc2_fprop,
         )
+
         layer_pd = self._create_pd_linear(layer_te, axis=1)
 
         assert_shape(
-            layer_te.weight, [self.out_features, self.in_features // self.model_parallel_size]
+            layer_pd.weight, [FFN, H]
         )
-        assert_shape(layer_te.bias, [self.out_features])
+        assert_shape(
+            layer_te.weight, [H, FFN // self.model_parallel_size]
+        )
+        assert_shape(layer_te.bias, [H])
 
         optimizer_te = paddle.optimizer.SGD(learning_rate=0.001, parameters=layer_te.parameters())
         optimizer_pd = paddle.optimizer.SGD(learning_rate=0.001, parameters=layer_pd.parameters())
@@ -156,7 +148,8 @@ class TestLinearTp(_TestLinearTpBase):
         optimizer_te = fleet.distributed_optimizer(optimizer_te)
 
         for _ in range(5):
-            inp = paddle.uniform([self.batch_size, self.in_features], self.global_dtype)
+            inp = paddle.uniform([self.batch_size, FFN], self.global_dtype)
+            
             with te.fp8_autocast(enabled=self.fp8):
                 loss_tp, grad_input = self._train_one_step(
                     layer_te,
@@ -168,51 +161,6 @@ class TestLinearTp(_TestLinearTpBase):
             loss_ref, grad_input_ref = self._train_one_step(layer_pd, inp, optimizer_pd)
             assert_allclose(loss_tp, loss_ref, rtol=self.rtol, atol=self.atol)
             assert_allclose(grad_input, grad_input_ref, rtol=self.rtol, atol=self.atol)
-
-
-class TestLinearTpFP8(TestLinearTp):
-    """Tests Linear layer with column/row parallelism in FP8"""
-
-    def set_attr(self):
-        """Set test configs"""
-        self.batch_size = 16
-        self.in_features = 32
-        self.out_features = 64
-        self.global_dtype = "bfloat16"
-        self.rtol = 1e-2
-        self.atol = 1e-2
-        self.fp8 = True
-        self.sequence_parallel = False
-
-
-class TestLinearSp(TestLinearTp):
-    """Tests Linear layer with sequence parallelism"""
-
-    def set_attr(self):
-        """Set test configs"""
-        self.batch_size = 16
-        self.in_features = 32
-        self.out_features = 64
-        self.global_dtype = "bfloat16"
-        self.rtol = 1e-3
-        self.atol = 1e-3
-        self.fp8 = False
-        self.sequence_parallel = True
-
-
-class TestLinearSpFP8(TestLinearTp):
-    """Tests Linear layer with sequence parallelism in FP8"""
-
-    def set_attr(self):
-        """Set test configs"""
-        self.batch_size = 16
-        self.in_features = 32
-        self.out_features = 64
-        self.global_dtype = "bfloat16"
-        self.rtol = 1e-2
-        self.atol = 1e-2
-        self.fp8 = True
-        self.sequence_parallel = True
 
 
 if __name__ == "__main__":
