@@ -13,6 +13,7 @@
 #include "common/util/system.h"
 #include "common/util/cuda_runtime.h"
 #include "paddle/phi/backends/gpu/cuda/cuda_graph.h"
+#include "comm_gemm_overlap.h"
 
 namespace transformer_engine {
 namespace paddle_ext {

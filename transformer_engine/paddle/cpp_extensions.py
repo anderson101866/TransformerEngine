@@ -29,6 +29,9 @@ def gemm(
     out_dtype: Optional[paddle.dtype] = None,
     bias: Optional[paddle.Tensor] = None,
     use_bias: bool = False,
+    ub_algo: tex.NVTE_Comm_Overlap_Algo = None,
+    ub: tex.UbufP2PCommOverlap = None,
+    extra_output_tensor: paddle.Tensor = None, #reduce-scattered output for UB (local output)
 ) -> Tuple[Union[paddle.Tensor, None], ...]:
     """Non FP8 GEMM."""
 
@@ -76,7 +79,7 @@ def gemm(
     else:
         bias_dtype = output_dtype
 
-    tex.te_gemm(
+    args = (
         A,
         None,
         B,
@@ -101,7 +104,26 @@ def gemm(
         accumulate,
         False,  # use_split_accumulator
     )
-
+    if ub_algo is None:
+        fn = tex.te_gemm
+    else:
+        empty_tensor = paddle.to_tensor(tuple())
+        assert ub is not None, "ub_algo and ub should be both specified, but ub is None"
+        workspace_index = next(i for i, arg in enumerate(args) if id(arg) == id(workspace)) #don't compare with value but use `id`, compare with value may trigger Tensor.__eq__
+        if ub_algo == tex.NVTE_Comm_Overlap_Algo.SPLIT_PIPELINED_AG_P2P:
+            fn = ub.split_overlap_ag_p2p
+            extra_output_tensor = (
+                empty_tensor if extra_output_tensor is None else extra_output_tensor
+            )
+        elif ub_algo == tex.NVTE_Comm_Overlap_Algo.SPLIT_PIPELINED_RS_P2P:
+            fn = ub.split_overlap_rs_p2p
+            assert (
+                extra_output_tensor is not None
+            ), "SPLIT_PIPELINED_RS_P2P requires extra output tensor"
+        else:
+            raise TypeError("Unsupported comm+GEMM overlap algorithm!")
+        args = (*args[:workspace_index+1], extra_output_tensor, *args[workspace_index+1:]) #insert extra_output_tensor
+    fn(*args)
     return out, grad_bias, gelu_input
 
 

@@ -6,6 +6,10 @@
 
 #include "common.h"
 
+#include "paddle/phi/api/include/tensor_utils.h"
+#include "paddle/phi/backends/context_pool.h"
+#include "paddle/phi/common/memory_utils.h"
+
 namespace transformer_engine {
 namespace paddle_ext {
 
@@ -49,6 +53,22 @@ paddle::Tensor AllocateSpace(const NVTEShape &shape, const DType type, const pad
     return paddle::empty({static_cast<int64_t>(shape.data[0])}, Nvte2PaddleDType(type), place);
   }
   NVTE_CHECK(false, "Should never reach here! func: AllocateSpace");
+}
+paddle::Tensor CreateFromArray(const int cpu_data[], int64_t n, const paddle::GPUPlace &gpu) {
+  //reference: https://github.com/PaddlePaddle/Paddle/blob/6a21a78f80b920d23ef15cd2f87b47bf34ba5e13/test/cpp/phi/api/test_from_blob.cc#L115-L125
+  using phi::memory_utils::Copy;
+  phi::Allocator* allocator = paddle::GetAllocator(gpu);
+  auto gpu_allocation = allocator->Allocate(sizeof(cpu_data[0]) * n);
+  int* gpu_data = static_cast<int*>(gpu_allocation->ptr());
+  phi::DeviceContextPool& pool = phi::DeviceContextPool::Instance();
+  auto* ctx = reinterpret_cast<phi::GPUContext*>(pool.Get(gpu));
+  Copy(gpu,
+       gpu_data,
+       phi::CPUPlace(),
+       cpu_data,
+       sizeof(cpu_data),
+       ctx->stream());
+  return paddle::from_blob(gpu_data, {n}, phi::DataType::INT32);;
 }
 
 // MHA utils

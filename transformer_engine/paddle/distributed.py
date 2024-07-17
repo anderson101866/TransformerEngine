@@ -63,6 +63,10 @@ def get_tp_group_and_world_size(
 
     return model_parallel_group, world_size
 
+def get_distributed_world_size(group: Optional[dist_group_type] = None):
+    if not paddle.distributed.is_initialized():
+        return 1
+    return paddle.distributed.get_world_size(group=group)
 
 def is_pp_enabled() -> bool:
     """Check if pipeline parallel is enabled"""

@@ -77,6 +77,8 @@ inline std::vector<size_t> GetShapeArray(const paddle::optional<paddle::Tensor> 
 paddle::Tensor AllocateSpace(const NVTEShape &shape, const DType type, const paddle::Place &place,
                              bool init_to_zeros = 0);
 
+paddle::Tensor CreateFromArray(const int cpu_data[], int64_t n, const paddle::GPUPlace &gpu);
+
 // DType Utils
 inline paddle::DataType Nvte2PaddleDType(DType t) {
   switch (t) {

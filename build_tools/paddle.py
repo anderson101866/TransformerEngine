@@ -23,6 +23,7 @@ def setup_paddle_extension(
         csrc_source_files / "extensions.cu",
         csrc_source_files / "common.cpp",
         csrc_source_files / "custom_ops.cu",
+        csrc_source_files / "comm_gemm_overlap.cpp",
     ]
 
     # Header files

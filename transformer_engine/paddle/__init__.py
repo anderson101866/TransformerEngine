@@ -24,5 +24,10 @@ from .layer import (
     MultiHeadAttention,
     TransformerLayer,
     RotaryPositionEmbedding,
+
+    initialize_ub,
+    destroy_ub,
+    get_ub,
+    UbGEMM
 )
 from .recompute import recompute
