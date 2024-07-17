@@ -51,13 +51,13 @@ def parse_args(argv=None, namespace=None):
     return opts
 
 def train(args, tp_group):
-    local_size = paddle.distributed.get_world_size(tp_group)
+    tp_size = paddle.distributed.get_world_size(tp_group)
     
     # Initialize userbuffers with (M, N) buffer
     # M = sequence * batch
     # N = hidden size
     outer_size = args.batch_size*args.seq_length
-    te.initialize_ub((outer_size, args.hidden_size), paddle.bfloat16, local_size)    
+    te.initialize_ub((outer_size, args.hidden_size), paddle.bfloat16, tp_size)    
     
     ffn_hidden_size = 4 * args.hidden_size
     
@@ -67,16 +67,16 @@ def train(args, tp_group):
     # N = hidden size
     # K = MLP intermediate size, named ffn_hidden_size (usually 4x hidden size)
     # P = number of devices for sequence/tensor parallelism
-    print(f'M={outer_size}, N=H={args.hidden_size}, K={ffn_hidden_size}, P=TP=SP={local_size}')
+    print(f'M={outer_size}, N=H={args.hidden_size}, K={ffn_hidden_size}, P=TP=SP={tp_size}')
     
     if args.comm_type == tex.NVTE_Comm_Overlap_Type.AG:
         # (M/P, N) -> overlapped AG -> (M, N) x (K/P, N)^T = (M, K/P)
-        local_kernel_t_shape = (ffn_hidden_size // local_size, args.hidden_size) #(K/P, N)
-        local_inp_shape = (outer_size // local_size, args.hidden_size)           #(M/P, N)
+        local_kernel_t_shape = (ffn_hidden_size // tp_size, args.hidden_size) #(K/P, N)
+        local_inp_shape = (outer_size // tp_size, args.hidden_size)           #(M/P, N)
     else:
         # (M, K/P) x (N, K/P)^T = (M, N) -> overlapped RS -> (M/P, N)
-        local_kernel_t_shape = (args.hidden_size, ffn_hidden_size // local_size) #(N, K/P)
-        local_inp_shape = (outer_size, ffn_hidden_size // local_size)            #(M, K/P)
+        local_kernel_t_shape = (args.hidden_size, ffn_hidden_size // tp_size) #(N, K/P)
+        local_inp_shape = (outer_size, ffn_hidden_size // tp_size)            #(M, K/P)
     
     kernel_t = paddle.rand(local_kernel_t_shape, dtype=paddle.bfloat16).cuda()
     inp = paddle.rand(local_inp_shape, dtype=paddle.bfloat16).cuda()
@@ -115,7 +115,7 @@ def train(args, tp_group):
         gemm_inp = inp
         ubuf_out = ub_obj.get_ubuf_output(tex.NVTE_Comm_Overlap_Type.AG)
         rs_out = paddle.empty(
-            (outer_size // local_size, args.hidden_size), dtype=paddle.bfloat16)
+            (outer_size // tp_size, args.hidden_size), dtype=paddle.bfloat16)
     assert not kernel_t.place.is_cpu_place(), f'{kernel_t.place}'
     assert not gemm_inp.place.is_cpu_place(), f'{gemm_inp.place}'
     assert rs_out is None or not rs_out.place.is_cpu_place()  , f'{rs_out.place}'
@@ -149,8 +149,8 @@ def train(args, tp_group):
 
     # Compare against standard GEMM
     assert ref_g.shape == test_out.shape, f'ref_g.shape={ref_g.shape}, test_out.shape={test_out.shape}'
-    rtol=0.125  if args.fp8 else 1.6e-2
-    atol=0.0675 if args.fp8 else 1e-5
+    rtol=0.125  if args.fp8 else 0.01
+    atol=0.0675 if args.fp8 else 0.001
     assert paddle.allclose(ref_g.to(dtype=paddle.float32), test_out.to(dtype=paddle.float32), rtol=rtol, atol=atol), \
         f'paddle.isclose(ref_g, test_out, rtol={rtol}, atol={atol})={paddle.isclose(ref_g, test_out, rtol=rtol, atol=atol)}'
     

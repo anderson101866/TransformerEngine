@@ -27,7 +27,6 @@ from .layer import (
 
     initialize_ub,
     destroy_ub,
-    get_ub,
     UbGEMM
 )
 from .recompute import recompute

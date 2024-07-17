@@ -36,6 +36,8 @@ from ..profile import nvtx_range
 from ..recompute import is_in_recompute_phase
 from ..fp8_buffer import FP8RecomputeBuffer
 
+__all__ = ["initialize_ub", "destroy_ub"]
+
 _2X_ACC_FPROP = False
 _2X_ACC_DGRAD = True
 _2X_ACC_WGRAD = True
@@ -75,6 +77,11 @@ class UbGEMM(Enum):
 
     def get_dgrad(self):
         return _fprop_to_dgrad[self]
+    
+    def is_qkv(self):
+        return self == UbGEMM.qkv_fprop or self == UbGEMM.qkv_dgrad
+    def is_proj(self):
+        return self == UbGEMM.proj_fprop or self == UbGEMM.proj_dgrad
     
 _fprop_to_dgrad = {
     UbGEMM.qkv_fprop:  UbGEMM.qkv_dgrad, 
@@ -225,12 +232,18 @@ class _UBufGemmManager:
             "Currently, userbuffer comm-overlap doesn't support fp8"
         #P2P prefered options
         cga_size = 1
-        num_sm = 1
         use_ce = True
         for ub_gemm in UbGEMM:
-            is_reduce_scatter = ub_gemm.with_reduce_scatter()
-            set_sm_margin = ub_gemm.with_reduce_scatter()
             sample_buffer = paddle.empty(shape, dtype=paddle.uint8 if use_fp8 and not is_reduce_scatter else dtype)
+            # Adjust SMs reserved for communication in MultiheadAttention
+            if ub_gemm.is_qkv():
+                num_sm = 8
+            elif ub_gemm.is_proj():
+                num_sm = 24
+            else:
+                num_sm = 4
+            set_sm_margin = ub_gemm.with_reduce_scatter()
+            is_reduce_scatter = ub_gemm.with_reduce_scatter()
             self.__ub_communicators[ub_gemm] = tex.UbufP2PCommOverlap(
                 sample_buffer,  # Sample userbuffer
                 world_rank,  # Global rank
