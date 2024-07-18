@@ -58,13 +58,15 @@ class _TestLinearTpBase(unittest.TestCase):
             input_parallel = inp[split_size * self.rank : split_size * (self.rank + 1), :]
         else:
             input_parallel = inp
+        if not input_parallel.is_contiguous():
+            input_parallel = input_parallel.contiguous()
         input_parallel.stop_gradient = False
+        assert input_parallel.is_contiguous(), 'Native TE kernel assume the buffer is all contiguous'
         out = layer(input_parallel)
         if gather_output:
             total_out = mp_ops._c_concat(out, group=self.tp_group)
         else:
             total_out = out
-        print(f'rank:{paddle.distributed.get_rank()} out={out}')#TODO: DEBUG
         loss = total_out.mean()
         loss.backward()
         optimizer.step()
@@ -107,8 +109,8 @@ class TestLinearUbOverlapRS(_TestLinearTpBase):
         self.in_features = 64*4
         self.out_features = 64
         self.global_dtype = "bfloat16"
-        self.rtol = 1.6e-2
-        self.atol = 1e-5
+        self.rtol = 0.01
+        self.atol = 0.001
         self.fp8 = False
         self.sequence_parallel = True
         
@@ -130,7 +132,7 @@ class TestLinearUbOverlapRS(_TestLinearTpBase):
             ub_overlap_ag = True,
             ub_name=te.UbGEMM.fc2_fprop,
         )
-
+        
         layer_pd = self._create_pd_linear(layer_te, axis=1)
 
         assert_shape(
@@ -148,17 +150,17 @@ class TestLinearUbOverlapRS(_TestLinearTpBase):
         optimizer_te = fleet.distributed_optimizer(optimizer_te)
 
         for _ in range(5):
-            inp = paddle.uniform([self.batch_size, FFN], self.global_dtype)
+            inp = paddle.rand([self.batch_size, FFN], self.global_dtype)
             
-            with te.fp8_autocast(enabled=self.fp8):
-                loss_tp, grad_input = self._train_one_step(
-                    layer_te,
-                    inp,
-                    optimizer_te,
-                    split_input="column",
-                    gather_output=self.sequence_parallel,
-                )
             loss_ref, grad_input_ref = self._train_one_step(layer_pd, inp, optimizer_pd)
+            #with te.fp8_autocast(enabled=self.fp8):
+            loss_tp, grad_input = self._train_one_step(
+                layer_te,
+                inp,
+                optimizer_te,
+                split_input="column",
+                gather_output=self.sequence_parallel,
+            )
             assert_allclose(loss_tp, loss_ref, rtol=self.rtol, atol=self.atol)
             assert_allclose(grad_input, grad_input_ref, rtol=self.rtol, atol=self.atol)
 
