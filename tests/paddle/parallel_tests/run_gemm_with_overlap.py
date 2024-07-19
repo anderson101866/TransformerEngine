@@ -9,6 +9,7 @@ from functools import partial
 import paddle
 from paddle.distributed import fleet
 import transformer_engine.paddle as te
+from transformer_engine.paddle.layer.base import get_ub #excplit use a low-level API because this example mimic the fprop parts of te.Linear
 from transformer_engine import transformer_engine_paddle as tex
 from transformer_engine.paddle.cpp_extensions import (
     gemm,
@@ -101,7 +102,7 @@ def train(args, tp_group):
     
     # Set up comm/compute buffers
     if args.comm_type == tex.NVTE_Comm_Overlap_Type.AG:
-        ub_obj = te.get_ub(te.UbGEMM.fc1_fprop)
+        ub_obj = get_ub(te.UbGEMM.fc1_fprop)
         ub_algo = tex.NVTE_Comm_Overlap_Algo.SPLIT_PIPELINED_AG_P2P
         
         ub_obj.copy_input_to_ubuf(inp, True)
@@ -109,7 +110,7 @@ def train(args, tp_group):
         ubuf_out = None
         rs_out = paddle.empty_like(ub_obj.get_ubuf_output(tex.NVTE_Comm_Overlap_Type.RS))
     else:
-        ub_obj = te.get_ub(te.UbGEMM.fc2_fprop)
+        ub_obj = get_ub(te.UbGEMM.fc2_fprop)
         ub_algo = tex.NVTE_Comm_Overlap_Algo.SPLIT_PIPELINED_RS_P2P
         
         gemm_inp = inp

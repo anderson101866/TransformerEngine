@@ -97,7 +97,10 @@ def initialize_ub(shape: Union[list, tuple], dtype, tp_size: int):
     _ub_manager = _UBufGemmManager(shape, dtype, tp_size)
     
 def get_ub(ub: UbGEMM) -> tex.UbufP2PCommOverlap:
-    """Get userbuffer communicator corresponding to give key."""
+    """
+    Get userbuffer communicator corresponding to give key.
+    NOTE: We don't implicitly expost this low-level API to user. Only te.Linear or other layer will use it.
+    """
     global _ub_manager
     assert _ub_manager is not None, "UB manager is not initialized."
     return _ub_manager.get_ub(ub)
