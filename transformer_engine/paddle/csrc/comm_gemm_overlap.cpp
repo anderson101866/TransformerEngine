@@ -32,26 +32,17 @@ inline std::vector<size_t> GetShapeArray(const comm_gemm_overlap::optional_tenso
 }
 
 namespace comm_gemm_overlap {
-/**
- * Static container for Python callbacks to paddle.distributed collectives, 
- * and holds the python Tensor object they're using.
-*/
-static struct PaddleDistributedObjHolder {
-public:
-  bool initialized{false};
-  std::function<void(/*out*/paddle::Tensor &, const paddle::Tensor &, const std::string &)> allgather;
-  std::function<void(/*out*/paddle::Tensor &, int64_t, const std::string &)> bcast;
-  std::function<void(const std::string &)> barrier;
-private:
-} _dist_callbacks;
 
-void set_comm_overlap_callbacks(const std::function<void(/*out*/paddle::Tensor &, const paddle::Tensor &, const std::string &)> &allgather,
-                             const std::function<void(/*out*/paddle::Tensor &, int64_t, const std::string &)> bcast_callback,
-                             const std::function<void(const std::string &)> &barrier) {
-  _dist_callbacks.allgather = allgather;
-  _dist_callbacks.bcast = bcast_callback;
-  _dist_callbacks.barrier = barrier;
-  _dist_callbacks.initialized = true;
+PaddleDistributedCallbackHolder *_callback_holder = nullptr;
+
+void set_comm_overlap_callbacks(PaddleDistributedCallbackHolder *callback_holder, 
+  const std::function<void(/*out*/paddle::Tensor &, const paddle::Tensor &, const std::string &)> &allgather,
+  const std::function<void(/*out*/paddle::Tensor &, int64_t, const std::string &)> bcast,
+  const std::function<void(const std::string &)> &barrier) {
+  _callback_holder = callback_holder;
+  _callback_holder->allgather = allgather;
+  _callback_holder->bcast = bcast;
+  _callback_holder->barrier = barrier;
 }
 
 /*
@@ -59,7 +50,7 @@ void set_comm_overlap_callbacks(const std::function<void(/*out*/paddle::Tensor &
 */
 void ub_paddle_allgather(void *globaldata, size_t globalbytes, void *localdata, size_t localbytes,
                         char *group) {
-  NVTE_CHECK(_dist_callbacks.initialized,
+  NVTE_CHECK(_callback_holder,
         "Internal TE error: must set paddle.distributed callbacks during initialize_ub()");
   const auto localtensor =
     paddle::from_blob(
@@ -77,7 +68,7 @@ void ub_paddle_allgather(void *globaldata, size_t globalbytes, void *localdata, 
       phi::DataLayout::NCHW, //default layout
       phi::CPUPlace()
   );
-  _dist_callbacks.allgather(globaltensor, localtensor, group);
+  _callback_holder->allgather(globaltensor, localtensor, group);
   if (globaltensor.data() != globaldata) {
     NVTE_CHECK(globaltensor.is_cpu(), "Internal TE error: gathered data should be moved to host side to perform memcpy."); 
     memcpy(globaldata, globaltensor.data(), globalbytes);
@@ -89,14 +80,14 @@ void ub_paddle_allgather(void *globaldata, size_t globalbytes, void *localdata, 
 */
 void ub_torch_bcast(void *data, size_t bytes, int64_t src, char *group) {
   NVTE_CHECK(
-      _dist_callbacks.initialized,
+      _callback_holder,
         "Internal TE error: must set paddle.distributed callbacks during initialize_ub()");
   auto datatensor = paddle::from_blob(data, {static_cast<int64_t>(bytes / sizeof(uint8_t))},
     paddle::DataType::UINT8, 
     phi::DataLayout::NCHW, //default layout
     phi::CPUPlace()
   );
-  _dist_callbacks.bcast(datatensor, src, group);
+  _callback_holder->bcast(datatensor, src, group);
   if (datatensor.data() != data) {
     NVTE_CHECK(datatensor.is_cpu(), "Internal TE error: gathered data should be moved to host side to perform memcpy."); 
     memcpy(data, datatensor.data(), bytes);
@@ -107,9 +98,9 @@ void ub_torch_bcast(void *data, size_t bytes, int64_t src, char *group) {
 ** Python callback for torch.distributed.barrier(tp_group).
 */
 void ub_paddle_barrier(char *group) {
-  NVTE_CHECK(_dist_callbacks.initialized, 
+  NVTE_CHECK(_callback_holder, 
         "Internal TE error: must set paddle.distributed callbacks during initialize_ub()");
-  _dist_callbacks.barrier(group);
+  _callback_holder->barrier(group);
 }
 
 inline static auto get_element_size(const paddle::Tensor &x) {

@@ -19,6 +19,7 @@
 #include "common.h"
 #include "common/util/pybind_helper.h"
 #include "comm_gemm_overlap.h"
+#include <memory>
 
 namespace transformer_engine {
 namespace paddle_ext {
@@ -35,7 +36,19 @@ PYBIND11_MODULE(transformer_engine_paddle, m) {
   NVTE_ADD_COMMON_PYBIND11_BINDINGS(m)
   
   // Comm+GEMM Overlap
-  m.def("set_comm_overlap_callbacks", &te_cgo::set_comm_overlap_callbacks);
+  py::class_<te_cgo::PaddleDistributedCallbackHolder>(m, "PaddleDistributedCallbackHolder")
+    .def(py::init<>());
+  m.attr("_dist_callback_holder") = py::cast(
+    std::make_unique<te_cgo::PaddleDistributedCallbackHolder>(), 
+    py::return_value_policy::take_ownership //module m track its lifecycle
+  );
+  m.def("set_comm_overlap_callbacks", &te_cgo::set_comm_overlap_callbacks,
+    py::arg("callback_holder").none(false), //to reject None
+    py::arg("allgather"),
+    py::arg("bcast"),
+    py::arg("barrier")
+  );
+  
   py::class_<te_cgo::UbufP2PCommOverlap>(m, "UbufP2PCommOverlap", py::module_local())
       .def(py::init<const paddle::Tensor & /* sample */, int /* world_rank */, int /* world_size */, int /* local_rank */, 
                     int /* local_size */, int /* node_id */, int /* num_nodes */, int /* num_max_streams */, int /* tp_size */, 

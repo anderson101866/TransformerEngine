@@ -223,7 +223,7 @@ class _UBufGemmManager:
         def barrier_callback(group: str):
             paddle.distributed.barrier(group=self.ub_pgs[group])
 
-        tex.set_comm_overlap_callbacks(allgather_callback, bcast_callback, barrier_callback)
+        tex.set_comm_overlap_callbacks(tex._dist_callback_holder, allgather_callback, bcast_callback, barrier_callback)
 
     def __add_ub(self, shape, dtype, 
                  world_rank, world_size, local_rank, local_size, node_id, num_nodes, tp_size, 

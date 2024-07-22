@@ -37,13 +37,25 @@ namespace comm_gemm_overlap {
 #else
   using optional_tensor_ref = std::experimental::optional<paddle::Tensor>;
 #endif
-  
+
+/**
+ * Static container for Python callbacks to paddle.distributed collectives, 
+ * and holds the python Tensor object they're using.
+*/
+struct PaddleDistributedCallbackHolder {
+public:
+  PaddleDistributedCallbackHolder() = default;
+  std::function<void(/*out*/paddle::Tensor &, const paddle::Tensor &, const std::string &)> allgather;
+  std::function<void(/*out*/paddle::Tensor &, int64_t, const std::string &)> bcast;
+  std::function<void(const std::string &)> barrier;
+};
+
 /**
  * Helper function for setting Python callbacks to torch.distributed collectives.
  */
-void set_comm_overlap_callbacks(
+void set_comm_overlap_callbacks(PaddleDistributedCallbackHolder *callback_holder, 
   const std::function<void(/*out*/paddle::Tensor &, const paddle::Tensor &, const std::string &)> &allgather,
-  const std::function<void(/*out*/paddle::Tensor &, int64_t, const std::string &)> bcast_callback,
+  const std::function<void(/*out*/paddle::Tensor &, int64_t, const std::string &)> bcast,
   const std::function<void(const std::string &)> &barrier);
 
 /** 
