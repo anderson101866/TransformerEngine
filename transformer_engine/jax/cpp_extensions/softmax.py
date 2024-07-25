@@ -7,7 +7,6 @@ from functools import partial, reduce
 import operator
 import warnings
 
-import jax
 import jax.numpy as jnp
 from jax import core, dtypes
 from jax.interpreters.mlir import ir
@@ -30,30 +29,6 @@ __all__ = [
     "scaled_upper_triang_masked_softmax_bwd",
     "is_softmax_kernel_available",
 ]
-
-
-def _jax_scaled_softmax(logits: jnp.ndarray, scale_factor: float):
-    return jax.nn.softmax(scale_factor * logits)
-
-
-def _jax_scaled_masked_softmax(logits: jnp.ndarray, mask: jnp.ndarray, scale_factor: float):
-    if mask is not None:
-        logits += jax.lax.select(
-            mask > 0,
-            jnp.full(mask.shape, -1e10).astype(logits.dtype),
-            jnp.full(mask.shape, 0.0).astype(logits.dtype),
-        )
-    return jax.nn.softmax(logits * scale_factor)
-
-
-def _jax_scaled_upper_triang_masked_softmax(logits: jnp.ndarray, scale_factor: float):
-    mask = 1 - jnp.tril(jnp.ones_like(logits))
-    logits += jax.lax.select(
-        mask > 0,
-        jnp.full(mask.shape, -1e10).astype(logits.dtype),
-        jnp.full(mask.shape, 0.0).astype(logits.dtype),
-    )
-    return jax.nn.softmax(logits * scale_factor)
 
 
 def is_softmax_kernel_available(
@@ -160,7 +135,7 @@ class SoftmaxPrimitive(BasePrimitive):
 
         out = custom_caller(name, args, opaque, False)
 
-        return out
+        return [out]
 
     @staticmethod
     def forward_impl(primitive, logits, scale_factor):
@@ -272,7 +247,7 @@ class SoftmaxPrimitive(BasePrimitive):
 
         out = custom_caller(name, args, opaque, False)
 
-        return out
+        return [out]
 
     @staticmethod
     def backward_impl(primitive, dz, softmax_out, scale_factor):
@@ -420,8 +395,6 @@ def scaled_softmax_fwd(logits: jnp.ndarray, scale_factor: float) -> jnp.ndarray:
     scaled_softmax_forward wrapper
     Return FP16/BF16 tensor
     """
-    if not ScaledSoftmaxFwdPrimitive.enabled():
-        return _jax_scaled_softmax(logits, scale_factor)
     return ScaledSoftmaxFwdPrimitive.outer_primitive.bind(logits, scale_factor=scale_factor)
 
 
@@ -496,16 +469,12 @@ register_primitive(ScaledSoftmaxBwdPrimitive)
 
 
 def scaled_softmax_bwd(
-    dz: jnp.ndarray, softmax_out: jnp.ndarray, logits: jnp.ndarray, scale_factor: float
+    dz: jnp.ndarray, softmax_out: jnp.ndarray, scale_factor: float
 ) -> jnp.ndarray:
     """
     scaled_backward wrapper
     Return FP16/BF16 tensor
     """
-    if not ScaledSoftmaxBwdPrimitive.enabled():
-        _, vjp_func = jax.vjp(partial(_jax_scaled_softmax, scale_factor=scale_factor), logits)
-        return vjp_func(dz)[0]
-
     return ScaledSoftmaxBwdPrimitive.outer_primitive.bind(
         dz, softmax_out, scale_factor=scale_factor
     )
@@ -608,7 +577,7 @@ class ScaledMaskedSoftmaxFwdPrimitive(SoftmaxPrimitive):
 
         out = custom_caller(ScaledMaskedSoftmaxFwdPrimitive.name, args, opaque, False)
 
-        return out
+        return [out]
 
     @staticmethod
     def impl(logits, mask, scale_factor):
@@ -656,8 +625,6 @@ def scaled_masked_softmax_fwd(
     scaled_masked_softmax_forward wrapper
     Return FP16/BF16 tensor
     """
-    if not ScaledMaskedSoftmaxFwdPrimitive.enabled():
-        return _jax_scaled_masked_softmax(logits, mask, scale_factor)
     return ScaledMaskedSoftmaxFwdPrimitive.outer_primitive.bind(
         logits, mask, scale_factor=scale_factor
     )
@@ -737,21 +704,12 @@ register_primitive(ScaledMaskedSoftmaxBwdPrimitive)
 
 
 def scaled_masked_softmax_bwd(
-    dz: jnp.ndarray,
-    softmax_out: jnp.ndarray,
-    logits: jnp.ndarray,
-    mask: jnp.ndarray,
-    scale_factor: float,
+    dz: jnp.ndarray, softmax_out: jnp.ndarray, scale_factor: float
 ) -> jnp.ndarray:
     """
     scaled_masked_backward wrapper
     Return FP16/BF16 tensor
     """
-    if not ScaledMaskedSoftmaxBwdPrimitive.enabled():
-        _, vjp_func = jax.vjp(
-            partial(_jax_scaled_masked_softmax, scale_factor=scale_factor), logits, mask
-        )
-        return vjp_func(dz)[0]
     return ScaledMaskedSoftmaxBwdPrimitive.outer_primitive.bind(
         dz, softmax_out, scale_factor=scale_factor
     )
@@ -848,8 +806,6 @@ def scaled_upper_triang_masked_softmax_fwd(logits: jnp.ndarray, scale_factor: fl
     scaled_upper_triang_masked_softmax_forward wrapper
     Return FP16/BF16 tensor
     """
-    if not ScaledUpperTriangMaskedSoftmaxFwdPrimitive.enabled():
-        return _jax_scaled_upper_triang_masked_softmax(logits, scale_factor)
     return ScaledUpperTriangMaskedSoftmaxFwdPrimitive.outer_primitive.bind(
         logits, scale_factor=scale_factor
     )
@@ -937,17 +893,12 @@ register_primitive(ScaledUpperTriangMaskedSoftmaxBwdPrimitive)
 
 
 def scaled_upper_triang_masked_softmax_bwd(
-    dz: jnp.ndarray, softmax_out: jnp.ndarray, logits: jnp.ndarray, scale_factor: float
+    dz: jnp.ndarray, softmax_out: jnp.ndarray, scale_factor: float
 ) -> jnp.ndarray:
     """
     scaled_upper_triang_masked_backward wrapper
     Return FP16/BF16 tensor
     """
-    if not ScaledUpperTriangMaskedSoftmaxBwdPrimitive.enabled():
-        _, vjp_func = jax.vjp(
-            partial(_jax_scaled_upper_triang_masked_softmax, scale_factor=scale_factor), logits
-        )
-        return vjp_func(dz)[0]
     return ScaledUpperTriangMaskedSoftmaxBwdPrimitive.outer_primitive.bind(
         dz, softmax_out, scale_factor=scale_factor
     )

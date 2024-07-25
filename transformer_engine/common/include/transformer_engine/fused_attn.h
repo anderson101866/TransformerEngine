@@ -11,8 +11,6 @@
 #ifndef TRANSFORMER_ENGINE_FUSED_ATTN_FP8_H_
 #define TRANSFORMER_ENGINE_FUSED_ATTN_FP8_H_
 
-#include <cstdint>
-
 #include "transformer_engine.h"
 
 #ifdef __cplusplus
@@ -95,14 +93,10 @@ enum NVTE_Mask_Type {
   NVTE_NO_MASK = 0,
   /*! Padding attention mask */
   NVTE_PADDING_MASK = 1,
-  /*! Causal attention mask (aligned to the top left corner) */
+  /*! Causal attention mask */
   NVTE_CAUSAL_MASK = 2,
-  /*! Padding and causal attention mask (aligned to the top left corner) */
+  /*! Padding and causal attention mask */
   NVTE_PADDING_CAUSAL_MASK = 3,
-  /*! Causal attention mask (aligned to the bottom right corner) */
-  NVTE_CAUSAL_BOTTOM_RIGHT_MASK = 4,
-  /*! Padding and causal attention mask (aligned to the bottom right corner) */
-  NVTE_PADDING_CAUSAL_BOTTOM_RIGHT_MASK = 5,
 };
 
 /*! \enum NVTE_Fused_Attn_Backend
@@ -137,25 +131,22 @@ NVTE_QKV_Format nvte_get_qkv_format(NVTE_QKV_Layout qkv_layout);
 
 /*! \brief Get fused attention backend based on input parameters.
  *
- *  \param[in]     q_dtype           The data type of Tensor Q.
- *  \param[in]     kv_dtype          The data type of Tensors K, V.
- *  \param[in]     qkv_layout        The layout of Tensors Q, K, V.
- *  \param[in]     bias_type         The attention bias type.
- *  \param[in]     attn_mask_type    The attention mask type.
- *  \param[in]     dropout           The dropout probability.
- *  \param[in]     num_attn_heads    The number of heads in Q.
- *  \param[in]     num_gqa_groups    The number of heads in K, V.
- *  \param[in]     max_seqlen_q      The sequence length of Q.
- *  \param[in]     max_seqlen_kv     The sequence length of K, V.
- *  \param[in]     head_dim          The head dimension of Q, K, V.
- *  \param[in]     window_size_left  Sliding window size (the left half).
- *  \param[in]     window_size_right Sliding window size (the right half).
+ *  \param[in]     q_dtype          The data type of Tensor Q.
+ *  \param[in]     kv_dtype         The data type of Tensors K, V.
+ *  \param[in]     qkv_layout       The layout of Tensors Q, K, V.
+ *  \param[in]     bias_type        The attention bias type.
+ *  \param[in]     attn_mask_type   The attention mask type.
+ *  \param[in]     dropout          The dropout probability.
+ *  \param[in]     num_attn_heads   The number of heads in Q.
+ *  \param[in]     num_gqa_groups   The number of heads in K, V.
+ *  \param[in]     max_seqlen_q     The sequence length of Q.
+ *  \param[in]     max_seqlen_kv    The sequence length of K, V.
+ *  \param[in]     head_dim         The head dimension of Q, K, V.
  */
 NVTE_Fused_Attn_Backend nvte_get_fused_attn_backend(
     NVTEDType q_dtype, NVTEDType kv_dtype, NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type,
     NVTE_Mask_Type attn_mask_type, float dropout, size_t num_attn_heads, size_t num_gqa_groups,
-    size_t max_seqlen_q, size_t max_seqlen_kv, size_t head_dim, int64_t window_size_left,
-    int64_t window_size_right);
+    size_t max_seqlen_q, size_t max_seqlen_kv, size_t head_dim);
 
 /*! \brief Compute dot product attention with packed QKV input.
  *
@@ -202,8 +193,6 @@ NVTE_Fused_Attn_Backend nvte_get_fused_attn_backend(
  *  \param[in]     qkv_layout               QKV tensor's layout.
  *  \param[in]     bias_type                Bias type.
  *  \param[in]     attn_mask_type           Attention mask type.
- *  \param[in]     window_size_left         Sliding window size (the left half).
- *  \param[in]     window_size_right        Sliding window size (the right half).
  *  \param[in]     workspace                Workspace tensor.
  *  \param[in]     stream                   CUDA stream used for this operation.
  */
@@ -213,7 +202,6 @@ void nvte_fused_attn_fwd_qkvpacked(const NVTETensor QKV, const NVTETensor Bias, 
                                    const NVTETensor rng_state, size_t max_seqlen, bool is_training,
                                    float attn_scale, float dropout, NVTE_QKV_Layout qkv_layout,
                                    NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
-                                   int64_t window_size_left, int64_t window_size_right,
                                    NVTETensor workspace, cudaStream_t stream);
 
 /*! \brief Compute the backward of the dot product attention with packed QKV input.
@@ -256,9 +244,6 @@ void nvte_fused_attn_fwd_qkvpacked(const NVTETensor QKV, const NVTETensor Bias, 
  *  \param[in]     qkv_layout               QKV tensor's layout.
  *  \param[in]     bias_type                Bias type.
  *  \param[in]     attn_mask_type           Attention mask type.
- *  \param[in]     window_size_left         Sliding window size (the left half).
- *  \param[in]     window_size_right        Sliding window size (the right half).
- *  \param[in]     deterministic            Whether to execute with deterministic behaviours.
  *  \param[in]     workspace                Workspace tensor.
  *  \param[in]     stream                   CUDA stream used for this operation.
  */
@@ -269,8 +254,7 @@ void nvte_fused_attn_bwd_qkvpacked(const NVTETensor QKV, const NVTETensor O, con
                                    const NVTETensor cu_seqlens_padded, size_t max_seqlen,
                                    float attn_scale, float dropout, NVTE_QKV_Layout qkv_layout,
                                    NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
-                                   int64_t window_size_left, int64_t window_size_right,
-                                   bool deterministic, NVTETensor workspace, cudaStream_t stream);
+                                   NVTETensor workspace, cudaStream_t stream);
 
 /*! \brief Compute dot product attention with packed KV input.
  *
@@ -322,9 +306,6 @@ void nvte_fused_attn_bwd_qkvpacked(const NVTETensor QKV, const NVTETensor O, con
  *  \param[in]     qkv_layout                QKV tensor's layout.
  *  \param[in]     bias_type                 Bias type.
  *  \param[in]     attn_mask_type            Attention mask type.
- *  \param[in]     window_size_left          Sliding window size (the left half).
- *  \param[in]     window_size_right         Sliding window size (the right half).
- *  \param[in]     deterministic             Whether to execute with deterministic behaviours.
  *  \param[in]     workspace                 Workspace tensor.
  *  \param[in]     stream                    CUDA stream used for this operation.
  */
@@ -336,7 +317,6 @@ void nvte_fused_attn_fwd_kvpacked(const NVTETensor Q, const NVTETensor KV, const
                                   size_t max_seqlen_q, size_t max_seqlen_kv, bool is_training,
                                   float attn_scale, float dropout, NVTE_QKV_Layout qkv_layout,
                                   NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
-                                  int64_t window_size_left, int64_t window_size_right,
                                   NVTETensor workspace, cudaStream_t stream);
 
 /*! \brief Compute the backward of the dot product attention with packed KV input.
@@ -385,9 +365,6 @@ void nvte_fused_attn_fwd_kvpacked(const NVTETensor Q, const NVTETensor KV, const
  *  \param[in]     qkv_layout                QKV tensor's layout.
  *  \param[in]     bias_type                 Bias type.
  *  \param[in]     attn_mask_type            Attention mask type.
- *  \param[in]     window_size_left          Sliding window size (the left half).
- *  \param[in]     window_size_right         Sliding window size (the right half).
- *  \param[in]     deterministic             Whether to execute with deterministic behaviours.
  *  \param[in]     workspace                 Workspace tensor.
  *  \param[in]     stream                    CUDA stream used for this operation.
  */
@@ -398,8 +375,7 @@ void nvte_fused_attn_bwd_kvpacked(
     const NVTETensor cu_seqlens_q_padded, const NVTETensor cu_seqlens_kv_padded,
     size_t max_seqlen_q, size_t max_seqlen_kv, float attn_scale, float dropout,
     NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
-    int64_t window_size_left, int64_t window_size_right, bool deterministic, NVTETensor workspace,
-    cudaStream_t stream);
+    NVTETensor workspace, cudaStream_t stream);
 
 /*! \brief Compute dot product attention with separate Q, K and V.
  *
@@ -455,8 +431,6 @@ void nvte_fused_attn_bwd_kvpacked(
  *  \param[in]     qkv_layout                QKV tensors' layout.
  *  \param[in]     bias_type                 Bias type.
  *  \param[in]     attn_mask_type            Attention mask type.
- *  \param[in]     window_size_left          Sliding window size (the left half).
- *  \param[in]     window_size_right         Sliding window size (the right half).
  *  \param[in]     workspace                 Workspace tensor.
  *  \param[in]     stream                    CUDA stream used for this operation.
  */
@@ -468,8 +442,7 @@ void nvte_fused_attn_fwd(const NVTETensor Q, const NVTETensor K, const NVTETenso
                          size_t max_seqlen_q, size_t max_seqlen_kv, bool is_training,
                          float attn_scale, float dropout, NVTE_QKV_Layout qkv_layout,
                          NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
-                         int64_t window_size_left, int64_t window_size_right, NVTETensor workspace,
-                         cudaStream_t stream);
+                         NVTETensor workspace, cudaStream_t stream);
 
 /*! \brief Compute the backward of the dot product attention with separate Q, K and V.
  *
@@ -522,9 +495,6 @@ void nvte_fused_attn_fwd(const NVTETensor Q, const NVTETensor K, const NVTETenso
  *  \param[in]     qkv_layout                QKV tensors' layout.
  *  \param[in]     bias_type                 Bias type.
  *  \param[in]     attn_mask_type            Attention mask type.
- *  \param[in]     window_size_left          Sliding window size (the left half).
- *  \param[in]     window_size_right         Sliding window size (the right half).
- *  \param[in]     deterministic             Whether to execute with deterministic behaviours.
  *  \param[in]     workspace                 Workspace tensor.
  *  \param[in]     stream                    CUDA stream used for this operation.
  */
@@ -536,9 +506,7 @@ void nvte_fused_attn_bwd(const NVTETensor Q, const NVTETensor K, const NVTETenso
                          const NVTETensor cu_seqlens_kv_padded, size_t max_seqlen_q,
                          size_t max_seqlen_kv, float attn_scale, float dropout,
                          NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type,
-                         NVTE_Mask_Type attn_mask_type, int64_t window_size_left,
-                         int64_t window_size_right, bool deterministic, NVTETensor workspace,
-                         cudaStream_t stream);
+                         NVTE_Mask_Type attn_mask_type, NVTETensor workspace, cudaStream_t stream);
 
 #ifdef __cplusplus
 }  // extern "C"

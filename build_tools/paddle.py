@@ -9,10 +9,6 @@ import setuptools
 
 from .utils import cuda_version
 
-import paddle
-
-paddle_version = paddle.__version__.replace(".", "")
-
 
 def setup_paddle_extension(
     csrc_source_files,
@@ -50,7 +46,6 @@ def setup_paddle_extension(
         "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
         "-U__CUDA_NO_BFLOAT162_OPERATORS__",
         "-U__CUDA_NO_BFLOAT162_CONVERSIONS__",
-        f"-DPADDLE_VERSION={paddle_version}",
         "--expt-relaxed-constexpr",
         "--expt-extended-lambda",
         "--use_fast_math",

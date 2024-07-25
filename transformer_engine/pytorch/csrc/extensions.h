@@ -14,29 +14,30 @@
  * Attention
  **************************************************************************************************/
 
-NVTE_Fused_Attn_Backend get_fused_attn_backend(
-    const transformer_engine::DType q_dtype, const transformer_engine::DType kv_dtype,
-    NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
-    float p_dropout, size_t num_attn_heads, size_t num_gqa_groups, size_t max_seqlen_q,
-    size_t max_seqlen_kv, size_t head_dim, int64_t window_size_left, int64_t window_size_right);
+NVTE_Fused_Attn_Backend get_fused_attn_backend(const transformer_engine::DType q_dtype,
+                                               const transformer_engine::DType kv_dtype,
+                                               NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type,
+                                               NVTE_Mask_Type attn_mask_type, float p_dropout,
+                                               size_t num_attn_heads, size_t num_gqa_groups,
+                                               size_t max_seqlen_q, size_t max_seqlen_kv,
+                                               size_t head_dim);
 
 std::vector<at::Tensor> fused_attn_fwd_qkvpacked(
     size_t max_seqlen, bool is_training, float attn_scale, float p_dropout, bool set_zero,
     NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
-    const std::vector<int64_t> window_size, const at::Tensor cu_seqlens, const at::Tensor QKV,
-    const transformer_engine::DType qkv_type, const c10::optional<at::Tensor> cu_seqlens_padded,
-    const c10::optional<at::Tensor> descale_QKV, const c10::optional<at::Tensor> descale_S,
-    const c10::optional<at::Tensor> scale_S, const c10::optional<at::Tensor> scale_O,
-    c10::optional<at::Tensor> amax_S, c10::optional<at::Tensor> amax_O,
-    const c10::optional<at::Tensor> Bias, const c10::optional<at::Generator> rng_gen,
-    size_t rng_elts_per_thread);
+    const at::Tensor cu_seqlens, const at::Tensor QKV, const transformer_engine::DType qkv_type,
+    const c10::optional<at::Tensor> cu_seqlens_padded, const c10::optional<at::Tensor> descale_QKV,
+    const c10::optional<at::Tensor> descale_S, const c10::optional<at::Tensor> scale_S,
+    const c10::optional<at::Tensor> scale_O, c10::optional<at::Tensor> amax_S,
+    c10::optional<at::Tensor> amax_O, const c10::optional<at::Tensor> Bias,
+    const c10::optional<at::Generator> rng_gen, size_t rng_elts_per_thread);
 
 std::vector<at::Tensor> fused_attn_bwd_qkvpacked(
     size_t max_seqlen, float attn_scale, float p_dropout, bool set_zero, NVTE_QKV_Layout qkv_layout,
-    NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type, const std::vector<int64_t> window_size,
-    bool deterministic, const at::Tensor cu_seqlens, const at::Tensor QKV, const at::Tensor O,
-    const at::Tensor dO, const transformer_engine::DType qkv_type,
-    const transformer_engine::DType dqkv_type, const std::vector<at::Tensor> Aux_CTX_Tensors,
+    NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type, const at::Tensor cu_seqlens,
+    const at::Tensor QKV, const at::Tensor O, const at::Tensor dO,
+    const transformer_engine::DType qkv_type, const transformer_engine::DType dqkv_type,
+    const std::vector<at::Tensor> Aux_CTX_Tensors,
     const c10::optional<at::Tensor> cu_seqlens_padded, const c10::optional<at::Tensor> descale_QKV,
     const c10::optional<at::Tensor> descale_S, const c10::optional<at::Tensor> descale_O,
     const c10::optional<at::Tensor> descale_dO, const c10::optional<at::Tensor> descale_dP,
@@ -47,9 +48,8 @@ std::vector<at::Tensor> fused_attn_bwd_qkvpacked(
 std::vector<at::Tensor> fused_attn_fwd_kvpacked(
     size_t max_seqlen_q, size_t max_seqlen_kv, bool is_training, float attn_scale, float p_dropout,
     bool set_zero, NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type,
-    NVTE_Mask_Type attn_mask_type, const std::vector<int64_t> window_size,
-    const at::Tensor cu_seqlens_q, const at::Tensor cu_seqlens_kv, const at::Tensor Q,
-    const at::Tensor KV, const transformer_engine::DType qkv_type,
+    NVTE_Mask_Type attn_mask_type, const at::Tensor cu_seqlens_q, const at::Tensor cu_seqlens_kv,
+    const at::Tensor Q, const at::Tensor KV, const transformer_engine::DType qkv_type,
     const c10::optional<at::Tensor> cu_seqlens_q_padded,
     const c10::optional<at::Tensor> cu_seqlens_kv_padded,
     const c10::optional<at::Tensor> descale_QKV, const c10::optional<at::Tensor> descale_S,
@@ -61,10 +61,10 @@ std::vector<at::Tensor> fused_attn_fwd_kvpacked(
 std::vector<at::Tensor> fused_attn_bwd_kvpacked(
     size_t max_seqlen_q, size_t max_seqlen_kv, float attn_scale, float p_dropout, bool set_zero,
     NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
-    const std::vector<int64_t> window_size, bool deterministic, const at::Tensor cu_seqlens_q,
-    const at::Tensor cu_seqlens_kv, const at::Tensor Q, const at::Tensor KV, const at::Tensor O,
-    const at::Tensor dO, const transformer_engine::DType qkv_type,
-    const transformer_engine::DType dqkv_type, const std::vector<at::Tensor> Aux_CTX_Tensors,
+    const at::Tensor cu_seqlens_q, const at::Tensor cu_seqlens_kv, const at::Tensor Q,
+    const at::Tensor KV, const at::Tensor O, const at::Tensor dO,
+    const transformer_engine::DType qkv_type, const transformer_engine::DType dqkv_type,
+    const std::vector<at::Tensor> Aux_CTX_Tensors,
     const c10::optional<at::Tensor> cu_seqlens_q_padded,
     const c10::optional<at::Tensor> cu_seqlens_kv_padded,
     const c10::optional<at::Tensor> descale_QKV, const c10::optional<at::Tensor> descale_S,
@@ -76,10 +76,9 @@ std::vector<at::Tensor> fused_attn_bwd_kvpacked(
 std::vector<at::Tensor> fused_attn_fwd(
     size_t max_seqlen_q, size_t max_seqlen_kv, bool is_training, float attn_scale, float p_dropout,
     bool set_zero, NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type,
-    NVTE_Mask_Type attn_mask_type, const std::vector<int64_t> window_size,
-    const at::Tensor cu_seqlens_q, const at::Tensor cu_seqlens_kv, const at::Tensor Q,
-    const at::Tensor K, const at::Tensor V, const transformer_engine::DType qkv_type,
-    const c10::optional<at::Tensor> cu_seqlens_q_padded,
+    NVTE_Mask_Type attn_mask_type, const at::Tensor cu_seqlens_q, const at::Tensor cu_seqlens_kv,
+    const at::Tensor Q, const at::Tensor K, const at::Tensor V,
+    const transformer_engine::DType qkv_type, const c10::optional<at::Tensor> cu_seqlens_q_padded,
     const c10::optional<at::Tensor> cu_seqlens_kv_padded,
     const c10::optional<at::Tensor> descale_QKV, const c10::optional<at::Tensor> descale_S,
     const c10::optional<at::Tensor> scale_S, const c10::optional<at::Tensor> scale_O,
@@ -90,10 +89,10 @@ std::vector<at::Tensor> fused_attn_fwd(
 std::vector<at::Tensor> fused_attn_bwd(
     size_t max_seqlen_q, size_t max_seqlen_kv, float attn_scale, float p_dropout, bool set_zero,
     NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
-    const std::vector<int64_t> window_size, bool deterministic, const at::Tensor cu_seqlens_q,
-    const at::Tensor cu_seqlens_kv, const at::Tensor Q, const at::Tensor K, const at::Tensor V,
-    const at::Tensor O, const at::Tensor dO, const transformer_engine::DType qkv_type,
-    const transformer_engine::DType dqkv_type, const std::vector<at::Tensor> Aux_CTX_Tensors,
+    const at::Tensor cu_seqlens_q, const at::Tensor cu_seqlens_kv, const at::Tensor Q,
+    const at::Tensor K, const at::Tensor V, const at::Tensor O, const at::Tensor dO,
+    const transformer_engine::DType qkv_type, const transformer_engine::DType dqkv_type,
+    const std::vector<at::Tensor> Aux_CTX_Tensors,
     const c10::optional<at::Tensor> cu_seqlens_q_padded,
     const c10::optional<at::Tensor> cu_seqlens_kv_padded,
     const c10::optional<at::Tensor> descale_QKV, const c10::optional<at::Tensor> descale_S,
@@ -445,9 +444,9 @@ void multi_tensor_sgd_cuda(int chunk_size, at::Tensor noop_flag,
  **************************************************************************************************/
 
 void set_comm_overlap_callbacks(
-    std::function<void(at::Tensor &, at::Tensor &, const std::string &)> allgather_callback,
-    std::function<void(at::Tensor &, int64_t, const std::string &)> bcast_callback,
-    std::function<void(const std::string &)> barrier_callback);
+  std::function<void(at::Tensor &, at::Tensor &, const std::string &)> allgather_callback,
+  std::function<void(at::Tensor &, int64_t, const std::string &)> bcast_callback,
+  std::function<void(const std::string &)> barrier_callback);
 
 namespace transformer_engine_torch {
 
@@ -462,50 +461,47 @@ class CommGemmOverlap : public torch::CustomClassHolder,
   bool _ubuf_scale_inv_initialized{false};
 
  public:
-  CommGemmOverlap(torch::Tensor sample, int world_rank, int world_size, int local_rank,
-                  int local_size, int node_id, int num_nodes, int tp_size, int num_splits,
-                  int num_max_streams, int cga_size, int num_comm_sm, bool set_sm_margin,
-                  bool use_ce, bool atomic_gemm);
+  CommGemmOverlap(
+    torch::Tensor sample, int world_rank, int world_size, int local_rank, int local_size,
+    int node_id, int num_nodes, int tp_size, int num_splits, int num_max_streams, int cga_size,
+    int num_comm_sm, bool set_sm_margin, bool use_ce, bool atomic_gemm);
 
   /*
   ** Bulk GEMM + COMM
   ** This function assumes the communication input is pre-copied to _ubuf.
   */
   std::vector<at::Tensor> bulk_overlap(
-      at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
-      transformer_engine::DType A_type, bool transa, at::Tensor B, at::Tensor B_scale_inverse,
-      int64_t B_fp8_tensor, transformer_engine::DType B_type, bool transb, at::Tensor D,
-      at::Tensor D_scale, transformer_engine::DType D_type, at::Tensor D_amax, at::Tensor bias,
-      transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad, at::Tensor workspace,
-      size_t workspaceSize, bool accumulate, bool use_split_accumulator,
-      NVTE_Comm_Overlap_Type comm_type, at::Tensor rs_output);
+    at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
+    transformer_engine::DType A_type, bool transa, at::Tensor B, at::Tensor B_scale_inverse,
+    int64_t B_fp8_tensor, transformer_engine::DType B_type, bool transb, at::Tensor D,
+    at::Tensor D_scale, transformer_engine::DType D_type, at::Tensor D_amax, at::Tensor bias,
+    transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad, at::Tensor workspace,
+    size_t workspaceSize, bool accumulate, bool use_split_accumulator,
+    NVTE_Comm_Overlap_Type comm_type, at::Tensor rs_output);
 
   /*
   ** Atomic GEMM + Split Reduce-Scatter
   */
-  void atomic_gemm_overlap_rs(at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
-                              transformer_engine::DType A_type, bool transa, at::Tensor B,
-                              at::Tensor B_scale_inverse, int64_t B_fp8_tensor,
-                              transformer_engine::DType B_type, bool transb, at::Tensor D,
-                              at::Tensor D_scale, transformer_engine::DType D_type,
-                              at::Tensor D_amax, at::Tensor bias,
-                              transformer_engine::DType bias_type, at::Tensor pre_gelu_out,
-                              bool grad, at::Tensor workspace, size_t workspaceSize,
-                              bool accumulate, bool use_split_accumulator, bool gemm_overlap,
-                              at::Tensor rs_output);
+  void atomic_gemm_overlap_rs(
+    at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
+    transformer_engine::DType A_type, bool transa, at::Tensor B, at::Tensor B_scale_inverse,
+    int64_t B_fp8_tensor, transformer_engine::DType B_type, bool transb,
+    at::Tensor D, at::Tensor D_scale, transformer_engine::DType D_type, at::Tensor D_amax,
+    at::Tensor bias, transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad,
+    at::Tensor workspace, size_t workspaceSize, bool accumulate, bool use_split_accumulator,
+    bool gemm_overlap, at::Tensor rs_output);
 
   /*
   ** Pipelined GEMM + Split Reduce-Scatter
   */
-  void split_overlap_rs(at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
-                        transformer_engine::DType A_type, bool transa, at::Tensor B,
-                        at::Tensor B_scale_inverse, int64_t B_fp8_tensor,
-                        transformer_engine::DType B_type, bool transb, at::Tensor D,
-                        at::Tensor D_scale, transformer_engine::DType D_type, at::Tensor D_amax,
-                        at::Tensor bias, transformer_engine::DType bias_type,
-                        at::Tensor pre_gelu_out, bool grad, at::Tensor workspace,
-                        size_t workspaceSize, bool accumulate, bool use_split_accumulator,
-                        bool gemm_overlap, at::Tensor rs_output);
+  void split_overlap_rs(
+    at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
+    transformer_engine::DType A_type, bool transa, at::Tensor B, at::Tensor B_scale_inverse,
+    int64_t B_fp8_tensor, transformer_engine::DType B_type, bool transb, at::Tensor D,
+    at::Tensor D_scale, transformer_engine::DType D_type, at::Tensor D_amax, at::Tensor bias,
+    transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad, at::Tensor workspace,
+    size_t workspaceSize, bool accumulate, bool use_split_accumulator, bool gemm_overlap,
+    at::Tensor rs_output);
 
   /*
   ** Helper function to copy input to _ubuf.
@@ -538,10 +534,10 @@ class CommGemmOverlapP2P : public torch::CustomClassHolder,
   int _ubuf_bytes, _ubuf_chunk_bytes;
 
  public:
-  CommGemmOverlapP2P(torch::Tensor sample, int world_rank, int world_size, int local_rank,
-                     int local_size, int node_id, int num_nodes, int tp_size, int num_max_streams,
-                     int cga_size, int num_comm_sms, bool set_sm_margin, bool use_ce,
-                     bool atomic_gemm, bool aggregate, bool is_reduce_scatter);
+  CommGemmOverlapP2P(
+    torch::Tensor sample, int world_rank, int world_size, int local_rank, int local_size,
+    int node_id, int num_nodes, int tp_size, int num_max_streams, int cga_size, int num_comm_sms,
+    bool set_sm_margin, bool use_ce, bool atomic_gemm, bool aggregate, bool is_reduce_scatter);
 
   /*
   ** Split AllGather + Atomic GEMM using P2P communication
@@ -549,53 +545,47 @@ class CommGemmOverlapP2P : public torch::CustomClassHolder,
   ** outputs in each rank to be in the contiguous memory space after all ring exchange phases.
   */
   torch::Tensor atomic_gemm_overlap_ag(
-      at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
-      transformer_engine::DType A_type, bool transa, at::Tensor B, at::Tensor B_scale_inverse,
-      int64_t B_fp8_tensor, transformer_engine::DType B_type, bool transb, at::Tensor D,
-      at::Tensor D_scale, transformer_engine::DType D_type, at::Tensor D_amax, at::Tensor bias,
-      transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad, at::Tensor workspace,
-      size_t workspaceSize, bool accumulate, bool use_split_accumulator, at::Tensor B_copy);
+    at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
+    transformer_engine::DType A_type, bool transa, at::Tensor B, at::Tensor B_scale_inverse,
+    int64_t B_fp8_tensor, transformer_engine::DType B_type, bool transb, at::Tensor D,
+    at::Tensor D_scale, transformer_engine::DType D_type, at::Tensor D_amax, at::Tensor bias,
+    transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad, at::Tensor workspace,
+    size_t workspaceSize, bool accumulate, bool use_split_accumulator, at::Tensor B_copy);
 
   /*
   ** Split AllGather + Pipelined GEMM using P2P communication
   ** This function assumes the input_b is pre-copied to _ubufs[rank_id]. This is needed to have AG
   ** outputs in each rank to be in the contiguous memory space after all ring exchange phases.
   */
-  torch::Tensor split_overlap_ag(at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
-                                 transformer_engine::DType A_type, bool transa, at::Tensor B,
-                                 at::Tensor B_scale_inverse, int64_t B_fp8_tensor,
-                                 transformer_engine::DType B_type, bool transb, at::Tensor D,
-                                 at::Tensor D_scale, transformer_engine::DType D_type,
-                                 at::Tensor D_amax, at::Tensor bias,
-                                 transformer_engine::DType bias_type, at::Tensor pre_gelu_out,
-                                 bool grad, at::Tensor workspace, size_t workspaceSize,
-                                 bool accumulate, bool use_split_accumulator, at::Tensor B_copy);
+  torch::Tensor split_overlap_ag(
+    at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
+    transformer_engine::DType A_type, bool transa, at::Tensor B, at::Tensor B_scale_inverse,
+    int64_t B_fp8_tensor, transformer_engine::DType B_type, bool transb, at::Tensor D,
+    at::Tensor D_scale, transformer_engine::DType D_type, at::Tensor D_amax, at::Tensor bias,
+    transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad, at::Tensor workspace,
+    size_t workspaceSize, bool accumulate, bool use_split_accumulator, at::Tensor B_copy);
 
   /*
   ** Atomic GEMM + Split Reduce-Scatter using P2P communication
   */
-  void atomic_gemm_overlap_rs(at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
-                              transformer_engine::DType A_type, bool transa, at::Tensor B,
-                              at::Tensor B_scale_inverse, int64_t B_fp8_tensor,
-                              transformer_engine::DType B_type, bool transb, at::Tensor D,
-                              at::Tensor D_scale, transformer_engine::DType D_type,
-                              at::Tensor D_amax, at::Tensor bias,
-                              transformer_engine::DType bias_type, at::Tensor pre_gelu_out,
-                              bool grad, at::Tensor workspace, size_t workspaceSize,
-                              bool accumulate, bool use_split_accumulator, at::Tensor rs_output);
+  void atomic_gemm_overlap_rs(
+    at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
+    transformer_engine::DType A_type, bool transa, at::Tensor B, at::Tensor B_scale_inverse,
+    int64_t B_fp8_tensor, transformer_engine::DType B_type, bool transb, at::Tensor D,
+    at::Tensor D_scale, transformer_engine::DType D_type, at::Tensor D_amax, at::Tensor bias,
+    transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad, at::Tensor workspace,
+    size_t workspaceSize, bool accumulate, bool use_split_accumulator, at::Tensor rs_output);
 
   /*
   ** Pipelined GEMM + Split Reduce+Scatter using P2P communication
   */
-  void split_overlap_rs(at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
-                        transformer_engine::DType A_type, bool transa, at::Tensor B,
-                        at::Tensor B_scale_inverse, int64_t B_fp8_tensor,
-                        transformer_engine::DType B_type, bool transb, at::Tensor D,
-                        at::Tensor D_scale, transformer_engine::DType D_type, at::Tensor D_amax,
-                        at::Tensor bias, transformer_engine::DType bias_type,
-                        at::Tensor pre_gelu_out, bool grad, at::Tensor workspace,
-                        size_t workspaceSize, bool accumulate, bool use_split_accumulator,
-                        at::Tensor rs_output);
+  void split_overlap_rs(
+    at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
+    transformer_engine::DType A_type, bool transa, at::Tensor B, at::Tensor B_scale_inverse,
+    int64_t B_fp8_tensor, transformer_engine::DType B_type, bool transb, at::Tensor D,
+    at::Tensor D_scale, transformer_engine::DType D_type, at::Tensor D_amax, at::Tensor bias,
+    transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad, at::Tensor workspace,
+    size_t workspaceSize, bool accumulate, bool use_split_accumulator, at::Tensor rs_output);
 
   /*
   ** Helper function to copy input to _ubuf or _ubufs chunks.

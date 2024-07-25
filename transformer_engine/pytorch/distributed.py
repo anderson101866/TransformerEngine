@@ -3,11 +3,9 @@
 # See LICENSE for license information.
 
 """Methods needed for distributed training (DP/TP)."""
-from __future__ import annotations
-
-from contextlib import contextmanager, AbstractContextManager, ContextDecorator
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import warnings
+from contextlib import contextmanager, AbstractContextManager, ContextDecorator
+from typing import Any, Dict, Union, Optional, Callable, Tuple, List
 
 import torch
 from torch.cuda import _lazy_call, _lazy_init
@@ -831,48 +829,23 @@ def reduce_scatter_along_first_dim(
 
 
 def gather_along_first_dim(
-    input_: torch.Tensor,
-    process_group: dist_group_type,
-    async_op: bool = False,
-) -> tuple[torch.Tensor, Any]:
-    """All-gather tensors and concatenate along first dimension."""
+    input_: torch.Tensor, tp_group: dist_group_type, async_op: bool = False
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Gather tensors and concatinate along the first dimension."""
 
-    # Return immediately if no communication is required
-    world_size = get_distributed_world_size(process_group)
+    world_size = get_distributed_world_size(tp_group)
+    # Bypass the function if we are using only 1 GPU.
     if world_size == 1:
         return input_, None
 
-    # Allocate output tensor
-    output_shape = list(input_.size())
-    output_shape[0] *= world_size
-    if isinstance(input_, Float8Tensor):
-        output = Float8Tensor.make_like(
-            input_,
-            data=torch.empty(
-                output_shape,
-                dtype=torch.uint8,
-                device=input_.device,
-            ),
-        )
-        src = input_._data.contiguous()
-        dst = output._data
-    else:
-        output = torch.empty(
-            output_shape,
-            dtype=input_.dtype,
-            device=input_.device,
-            memory_format=torch.contiguous_format,
-        )
-        src = input_.contiguous()
-        dst = output
+    dim_size = list(input_.size())
+    dim_size[0] = dim_size[0] * world_size
 
-    # Launch all-gather
+    output = torch.empty(dim_size, dtype=input_.dtype, device=torch.cuda.current_device())
     handle = torch.distributed.all_gather_into_tensor(
-        dst,
-        src,
-        group=process_group,
-        async_op=async_op,
+        output, input_.contiguous(), group=tp_group, async_op=async_op
     )
+
     return output, handle
 
 
