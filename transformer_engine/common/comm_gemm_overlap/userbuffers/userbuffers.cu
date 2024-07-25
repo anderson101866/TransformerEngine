@@ -1884,8 +1884,15 @@ template void reducescatter2_userbuff_strided_atomic_fp8<__nv_fp8_e4m3>(
     void *output, float *scale, const int handler, const int offset, const int rowelements,
     const int colelements, const int strideelements_out, const int strideelements_in,
     const int numchunks, void *counters, communicator *comm, cudaStream_t stream);
-
+template void reducescatter2_userbuff_strided_atomic_fp8<__nv_fp8_e5m2>(
+    void *output, float *scale, const int handler, const int offset, const int rowelements,
+    const int colelements, const int strideelements_out, const int strideelements_in,
+    const int numchunks, void *counters, communicator *comm, cudaStream_t stream);
 template void reducescatter2_userbuff_strided_multiatomic_fp8<__nv_fp8_e4m3>(
+    void *output, float *scale, const int handler, const int offset, const int rowelements,
+    const int colelements, const int strideelements_out, const int strideelements_in,
+    const int numchunks, void *counters, communicator *comm, cudaStream_t stream);
+template void reducescatter2_userbuff_strided_multiatomic_fp8<__nv_fp8_e5m2>(
     void *output, float *scale, const int handler, const int offset, const int rowelements,
     const int colelements, const int strideelements_out, const int strideelements_in,
     const int numchunks, void *counters, communicator *comm, cudaStream_t stream);
@@ -2486,7 +2493,7 @@ static __global__ void consumer_batch_kernel(void *atomic_ptr, int first_chunk_i
 
 // reset_counters
 static __global__ void set_counters_kernel(void *atomic_ptr, int first_chunk_i, int num_chunks,
-                                             unsigned int val) {
+                                           unsigned int val) {
   // Set specified range of counters to the given value -- 0: ready, 1: not ready
   if (blockIdx.x == 0 && threadIdx.x == 0) {
     for (int i = first_chunk_i; i < num_chunks; i++) {
