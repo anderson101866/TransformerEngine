@@ -61,7 +61,6 @@ class _TestLinearTpBase(unittest.TestCase):
         if not input_parallel.is_contiguous():
             input_parallel = input_parallel.contiguous()
         input_parallel.stop_gradient = False
-        assert input_parallel.is_contiguous(), 'Native TE kernel assume the buffer is all contiguous'
         out = layer(input_parallel)
         if gather_output:
             total_out = mp_ops._c_concat(out, group=self.tp_group)

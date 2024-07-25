@@ -14,6 +14,10 @@ from .fp8 import FP8TensorMeta, get_global_fp8_state
 BACKEND_F16m512_THREADS_PER_CTA = 128
 BACKEND_F16arb_ELTS_PER_THREADS = 16
 
+def _validate_continuous(input: paddle.Tensor):    
+    assert input.is_contiguous(), \
+        """Please ensure input tensor to be contiguous by `is_contiguous()`,
+        or specify the environment variable `FLAGS_use_stride_kerne=0` to keep behavior before paddle 2.6.0""" #Since paddle2.6, tensor is not contiguous by default. see: https://github.com/PaddlePaddle/Paddle/commit/a771e3439bb6e12ae34a44d372c821f301cac43e
 
 def gemm(
     A: paddle.Tensor,
@@ -34,6 +38,7 @@ def gemm(
     extra_output_tensor: paddle.Tensor = None, #reduce-scattered output for UB (local output)
 ) -> Tuple[Union[paddle.Tensor, None], ...]:
     """Non FP8 GEMM."""
+    _validate_continuous(B)
 
     assert layout in ("TN", "NN", "NT"), f"GEMM layout {layout} not supported."
     transa = layout[0] == "T"
@@ -149,6 +154,7 @@ def fp8_gemm(
     D_dtype: Optional[tex.DType] = None,
 ) -> paddle.Tensor:
     """TN layout GEMM with fp8 inputs."""
+    _validate_continuous(B)
 
     if D_dtype is not None and D_dtype in [tex.DType.kFloat8E4M3, tex.DType.kFloat8E5M2]:
         assert fp8_meta_tensor is not None and out_index is not None
