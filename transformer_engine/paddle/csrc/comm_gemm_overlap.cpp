@@ -132,20 +132,9 @@ UbufP2PCommOverlap::UbufP2PCommOverlap(
                                     : Paddle2NvteDType(sample.dtype());
 
   void *ubuf_ptr = nullptr;
-  const std::initializer_list<int64_t> kUbufShape{(sample.shape()[0] / _tp_size) * _num_ubuf_chunks, sample.shape()[1]};
-  if (getenv<bool>("UB_SKIPMC")) {
-    // Multicast is disabled so we have to pre-allocate the buffer here.
-    _ubuf = paddle::empty(kUbufShape, sample.dtype(), sample.place());
-    ubuf_ptr = _ubuf.data();
-    this->register_gpu_buffer(&ubuf_ptr, _ubuf_bytes, false);
-  } else {
-    // Multicast requires UB to allocate the buffer with specific memory options
-    // that PyTorch allocator does not support.
-    this->register_gpu_buffer(&ubuf_ptr, _ubuf_bytes, true);
-    _ubuf = paddle::from_blob(ubuf_ptr, kUbufShape, sample.dtype(), sample.layout(), sample.place());
-  }
-  NVTE_CHECK(ubuf_ptr);
-  
+  this->register_gpu_buffer(&ubuf_ptr, _ubuf_bytes, true);
+  _ubuf = paddle::from_blob(ubuf_ptr, {(sample.shape()[0] / _tp_size) * _num_ubuf_chunks, sample.shape()[1]}, sample.dtype(), sample.layout(), sample.place());
+  NVTE_CHECK(ubuf_ptr);  
 
   // Create tensor chunks for easy management
   char *ubuf_byte_ptr = reinterpret_cast<char *>(ubuf_ptr);
