@@ -901,11 +901,15 @@ class Linear(TransformerEngineBaseLayer):
         if self.backend == "paddle" and (ub_overlap_rs or ub_overlap_ag or ub_name):
             warnings.warn(
                 "userbuffer overlaping (tp-comm-overlap) is not supported for paddle backend and all `ub_*` arguments are ignored."
-            )            
-        self.ub_overlap_rs = ub_overlap_rs
-        self.ub_overlap_ag = ub_overlap_ag
+            )
         if ub_overlap_rs or ub_overlap_ag:
             assert ub_name is not None, "Userbuffer name (`ub_name`) is not set."
+            assert ub_name.is_fprop(), f'Please specify a forward propagation UbGEMM as `ub_name`. e.g. {", ".join(ub.name for ub in UbGEMM if ub.is_fprop())}'
+        elif ub_name is not None:
+            warnings.warn("Please set `ub_overlap_rs` or `ub_overlap_ag` to enable userbuffer overlaping (tp-comm-overlap), or `ub_name` argument is ignored.")
+            ub_name = None
+        self.ub_overlap_rs = ub_overlap_rs
+        self.ub_overlap_ag = ub_overlap_ag
         self.ub_name = ub_name
 
     def _te_forward(

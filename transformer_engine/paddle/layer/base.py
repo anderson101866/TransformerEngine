@@ -75,6 +75,8 @@ class UbGEMM(Enum):
     def with_reduce_scatter(self):
         return self in {UbGEMM.proj_fprop, UbGEMM.fc2_fprop, UbGEMM.fc1_dgrad, UbGEMM.qkv_dgrad}  
 
+    def is_fprop(self):
+        return self in _fprop_to_dgrad
     def get_dgrad(self):
         return _fprop_to_dgrad[self]
     
@@ -99,7 +101,7 @@ def initialize_ub(shape: Union[list, tuple], dtype, tp_size: int):
 def get_ub(ub: UbGEMM) -> tex.CommGemmOverlapP2P:
     """
     Get userbuffer communicator corresponding to give key.
-    NOTE: We don't implicitly expost this low-level API to user. Only te.Linear or other layer will use it.
+    NOTE: We don't implicitly expost this low-level API to user. Only te.Linear or other nn layer will use it.
     """
     global _ub_manager
     assert _ub_manager is not None, "UB manager is not initialized."
