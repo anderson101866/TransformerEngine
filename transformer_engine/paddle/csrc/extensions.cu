@@ -49,26 +49,26 @@ PYBIND11_MODULE(transformer_engine_paddle, m) {
     py::arg("barrier")
   );
   
-  py::class_<te_cgo::UbufP2PCommOverlap>(m, "UbufP2PCommOverlap", py::module_local())
+  py::class_<te_cgo::CommGemmOverlapP2P>(m, "CommGemmOverlapP2P", py::module_local())
       .def(py::init<const paddle::Tensor & /* sample */, int /* world_rank */, int /* world_size */, int /* local_rank */, 
                     int /* local_size */, int /* node_id */, int /* num_nodes */, int /* num_max_streams */, int /* tp_size */, 
                     int /* cga_size */, int /* num_comm_sms */, bool /* set_sm_margin */, bool /* use_ce */, 
                     bool /* atomic_gemm */, bool /* aggregate */, bool /* is_reduce_scatter */>())
-      .def("split_overlap_ag_p2p", &te_cgo::UbufP2PCommOverlap::split_overlap_ag,
+      .def("split_overlap_ag_p2p", &te_cgo::CommGemmOverlapP2P::split_overlap_ag,
            py::call_guard<py::gil_scoped_release>())
-      .def("split_overlap_rs_p2p", &te_cgo::UbufP2PCommOverlap::split_overlap_rs,
+      .def("split_overlap_rs_p2p", &te_cgo::CommGemmOverlapP2P::split_overlap_rs,
            py::call_guard<py::gil_scoped_release>())
-      .def("copy_input_to_ubuf", &te_cgo::UbufP2PCommOverlap::copy_input_to_ubuf,
+      .def("copy_input_to_ubuf", &te_cgo::CommGemmOverlapP2P::copy_input_to_ubuf,
            py::call_guard<py::gil_scoped_release>())
-      .def("get_ubuf_output", &te_cgo::UbufP2PCommOverlap::get_ubuf_output,
+      .def("get_ubuf_output", &te_cgo::CommGemmOverlapP2P::get_ubuf_output,
            py::call_guard<py::gil_scoped_release>())
-      .def("set_ubuf_scale_inv", &te_cgo::UbufP2PCommOverlap::set_ubuf_scale_inv,
+      .def("set_ubuf_scale_inv", &te_cgo::CommGemmOverlapP2P::set_ubuf_scale_inv,
            py::call_guard<py::gil_scoped_release>())
-      .def("is_fp8_ubuf", &te_cgo::UbufP2PCommOverlap::is_fp8_ubuf,
+      .def("is_fp8_ubuf", &te_cgo::CommGemmOverlapP2P::is_fp8_ubuf,
            py::call_guard<py::gil_scoped_release>())
-      .def("is_atomic_gemm", &te_cgo::UbufP2PCommOverlap::is_atomic_gemm,
+      .def("is_atomic_gemm", &te_cgo::CommGemmOverlapP2P::is_atomic_gemm,
            py::call_guard<py::gil_scoped_release>())
-      .def("is_p2p_overlap", &te_cgo::UbufP2PCommOverlap::is_p2p_overlap,
+      .def("is_p2p_overlap", &te_cgo::CommGemmOverlapP2P::is_p2p_overlap,
            py::call_guard<py::gil_scoped_release>());
 
   // Misc

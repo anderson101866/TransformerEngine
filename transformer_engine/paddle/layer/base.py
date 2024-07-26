@@ -96,7 +96,7 @@ def initialize_ub(shape: Union[list, tuple], dtype, tp_size: int):
     assert _ub_manager is None, "UB manager are already initialized."
     _ub_manager = _UBufGemmManager(shape, dtype, tp_size)
     
-def get_ub(ub: UbGEMM) -> tex.UbufP2PCommOverlap:
+def get_ub(ub: UbGEMM) -> tex.CommGemmOverlapP2P:
     """
     Get userbuffer communicator corresponding to give key.
     NOTE: We don't implicitly expost this low-level API to user. Only te.Linear or other layer will use it.
@@ -182,7 +182,7 @@ class _UBufGemmManager:
                       use_fp8)
 
     def get_ub(self, ub: UbGEMM):
-        assert ub is not None, f"Internal TE error: nn Layers should ensure non-None `ub` or reject user's input"
+        assert ub is not None, f"TE internal error: nn Layers should ensure non-None `ub`, and reject user's bad argument"
         return self.__ub_communicators[ub]
             
     def __set_bootstrap_callbacks(self):
@@ -190,7 +190,7 @@ class _UBufGemmManager:
         def allgather_callback(global_data: paddle.Tensor, local_data: paddle.Tensor, group: str):
             assert (
                 global_data.place.is_cpu_place() and local_data.place.is_cpu_place()                
-            ), ("Internal TE error: Comm+GEMM overlap bootstrap callbacks need host (CPU) tensors."
+            ), ("TE internal error: Comm+GEMM overlap bootstrap callbacks need host (CPU) tensors."
               f" global_data:{global_data.place} local_data:{local_data.place}")
             
             # Move tensors to device if using NCCL backend
@@ -200,7 +200,7 @@ class _UBufGemmManager:
                 paddle.distributed.all_gather(gathered_data_in_gpu, local_data.cuda(), group=pg)
                 # Copy global tensor from CUDA back to original CPU tensor
                 paddle.assign(gathered_data_in_gpu.cpu(), output=global_data)
-                assert global_data.place.is_cpu_place(), f"Internal TE error: Bootstrap callbacks need fill data into host (CPU) tensors, but not at {global_data.place}"
+                assert global_data.place.is_cpu_place(), f"TE internal error: Bootstrap callbacks need fill data into host (CPU) tensors, but not at {global_data.place}"
             else:
                 paddle.distributed.all_gather(global_data, local_data, group=pg)
 
@@ -208,7 +208,7 @@ class _UBufGemmManager:
             # Move tensor to device if using NCCL backend
             assert (
                 data.place.is_cpu_place()
-            ), "Internal TE error: Comm+GEMM overlap bootstrap callbacks need host (CPU) tensors."
+            ), "TE internal error: Comm+GEMM overlap bootstrap callbacks need host (CPU) tensors."
             
             pg = self.ub_pgs[group]
             if paddle.distributed.get_backend(pg) == "NCCL":
@@ -247,7 +247,7 @@ class _UBufGemmManager:
                 num_sm = 4
             set_sm_margin = ub_gemm.with_reduce_scatter()
             is_reduce_scatter = ub_gemm.with_reduce_scatter()
-            self.__ub_communicators[ub_gemm] = tex.UbufP2PCommOverlap(
+            self.__ub_communicators[ub_gemm] = tex.CommGemmOverlapP2P(
                 sample_buffer,  # Sample userbuffer
                 world_rank,  # Global rank
                 world_size,  # Number of global ranks

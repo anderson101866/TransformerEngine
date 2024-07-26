@@ -34,7 +34,7 @@ def gemm(
     bias: Optional[paddle.Tensor] = None,
     use_bias: bool = False,
     ub_algo: tex.NVTE_Comm_Overlap_Algo = None,
-    ub: tex.UbufP2PCommOverlap = None,
+    ub: tex.CommGemmOverlapP2P = None,
     extra_output_tensor: paddle.Tensor = None, #reduce-scattered output for UB (local output)
 ) -> Tuple[Union[paddle.Tensor, None], ...]:
     """Non FP8 GEMM."""

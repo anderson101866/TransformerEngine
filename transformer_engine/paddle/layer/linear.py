@@ -76,7 +76,7 @@ def _linear_fwd_fp8(
     bias_dtype = get_bias_dtype(activation_dtype)
     bias = cast_if_needed(bias, bias_dtype)
 
-    assert not ub_overlap_rs and not ub_overlap_ag and not ub_name #TODO: apply userbuffer (tp-comm-overlap) for fp8
+    assert not ub_overlap_rs and not ub_overlap_ag and not ub_name #TODO(anderson): apply userbuffer (tp-comm-overlap) for fp8
     if parallel_mode == "column" and sequence_parallel:
         inputmat_total, _ = allgather(inputmat, tp_group)
     else:
@@ -192,7 +192,6 @@ def _linear_fwd_non_fp8(
                 weight.shape[0] #out_feature
             ), dtype=activation_dtype)
     else: #w/o tp-comm-overlap
-        assert not ub_overlap_ag, "`ub_overlap_rs` and `ub_overlap_ag` should be mutally exclusive in 1 Linear" #TODO: remove this line
         out = None
         ub_algo = ub_obj = rs_out = None
     
@@ -212,15 +211,13 @@ def _linear_fwd_non_fp8(
 
 
     if activation == "gelu":
-        assert not ub_overlap_rs #TODO: MLP support userbuffer, where `activation == "gelu"` is specified
+        assert not ub_overlap_rs #TODO(anderson): support MLP with tp-comm-overlap(userbuffer). NOTE: only MLP specify `activation == "gelu"`
         gelu_out, _, out = outputs
         return out, gelu_out
     out, _, _ = outputs
     # Row Parallel Linear
     if ub_overlap_rs:
         out = rs_out
-        assert out.reshape((-1, *inputmat.shape[1:-1], out.shape[-1])).shape == out.shape, f'out.shape={out.shape}, inputmat.shape={inputmat}' #TODO: Do we need to reshape? to make
-        #  [*, in_features] -> [*, out_features] except first dimension changes for SP
     elif parallel_mode == "row" and sequence_parallel:
         out, _ = reduce_scatter(out, tp_group)
     elif parallel_mode == "row" and tensor_parallel:
@@ -320,12 +317,12 @@ def _linear_bwd_fp8(
     tp_group: Union[dist_group_type, None],
     fuse_wgrad_accumulation: bool,
     accumulate_wgrad_into_param_main_grad: bool,
-    ub_obj: Optional[tex.UbufP2PCommOverlap]=None,
+    ub_obj: Optional[tex.CommGemmOverlapP2P]=None,
     ub_algo: Optional[tex.NVTE_Comm_Overlap_Algo]=None,
 ):
     dgrad, wgrad, handle = None, None, None
 
-    assert ub_obj is None and ub_algo is None #TODO: apply userbuffer (tp-comm-overlap) for fp8
+    assert ub_obj is None and ub_algo is None #TODO(anderson): apply tp-comm-overlap(userbuffer) for fp8
     # Overlap input AG with dgrad
     inputmat_total = None
     inputmat_t_total = None
@@ -424,7 +421,7 @@ def _linear_bwd_non_fp8(
     accumulate_wgrad_into_param_main_grad: bool,
     gelu_input: Union[paddle.Tensor, None] = None,
     activation: str = "",
-    ub_obj: Optional[tex.UbufP2PCommOverlap]=None,
+    ub_obj: Optional[tex.CommGemmOverlapP2P]=None,
     ub_algo: Optional[tex.NVTE_Comm_Overlap_Algo]=None,
 ):
     """
@@ -510,7 +507,7 @@ def _linear_bwd(
     tp_group: Union[dist_group_type, None],
     fuse_wgrad_accumulation: bool,
     accumulate_wgrad_into_param_main_grad: bool,
-    ub_obj: Optional[tex.UbufP2PCommOverlap]=None,
+    ub_obj: Optional[tex.CommGemmOverlapP2P]=None,
     ub_algo: Optional[tex.NVTE_Comm_Overlap_Algo]=None,
 ):
     dgrad, wgrad, bgrad = None, None, None
@@ -687,7 +684,7 @@ class _Linear(paddle.autograd.PyLayer):
         with TransformerEngineBaseLayer.prepare_backward(
             ctx.fp8_enabled, ctx.fp8_meta, ctx.tp_group, ctx.tp_size, name="_Linear"
         ):
-            #TODO: implement ctx.ub_overlap_rs in backward
+            #TODO(anderson): implement ctx.ub_overlap_rs in backward
             (  # pylint: disable=unbalanced-tuple-unpacking
                 inputmat,
                 inputmat_t,

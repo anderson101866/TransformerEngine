@@ -51,7 +51,7 @@ void set_comm_overlap_callbacks(PaddleDistributedCallbackHolder *callback_holder
 void ub_paddle_allgather(void *globaldata, size_t globalbytes, void *localdata, size_t localbytes,
                         char *group) {
   NVTE_CHECK(_callback_holder,
-        "Internal TE error: must set paddle.distributed callbacks during initialize_ub()");
+        "TE internal error: must set paddle.distributed callbacks during initialize_ub()");
   const auto localtensor =
     paddle::from_blob(
       localdata, 
@@ -70,7 +70,7 @@ void ub_paddle_allgather(void *globaldata, size_t globalbytes, void *localdata, 
   );
   _callback_holder->allgather(globaltensor, localtensor, group);
   if (globaltensor.data() != globaldata) {
-    NVTE_CHECK(globaltensor.is_cpu(), "Internal TE error: gathered data should be moved to host side to perform memcpy."); 
+    NVTE_CHECK(globaltensor.is_cpu(), "TE internal error: gathered data should be moved to host side to perform memcpy."); 
     memcpy(globaldata, globaltensor.data(), globalbytes);
   }
 }
@@ -81,7 +81,7 @@ void ub_paddle_allgather(void *globaldata, size_t globalbytes, void *localdata, 
 void ub_torch_bcast(void *data, size_t bytes, int64_t src, char *group) {
   NVTE_CHECK(
       _callback_holder,
-        "Internal TE error: must set paddle.distributed callbacks during initialize_ub()");
+        "TE internal error: must set paddle.distributed callbacks during initialize_ub()");
   auto datatensor = paddle::from_blob(data, {static_cast<int64_t>(bytes / sizeof(uint8_t))},
     paddle::DataType::UINT8, 
     phi::DataLayout::NCHW, //default layout
@@ -89,7 +89,7 @@ void ub_torch_bcast(void *data, size_t bytes, int64_t src, char *group) {
   );
   _callback_holder->bcast(datatensor, src, group);
   if (datatensor.data() != data) {
-    NVTE_CHECK(datatensor.is_cpu(), "Internal TE error: gathered data should be moved to host side to perform memcpy."); 
+    NVTE_CHECK(datatensor.is_cpu(), "TE internal error: gathered data should be moved to host side to perform memcpy."); 
     memcpy(data, datatensor.data(), bytes);
   }
 }
@@ -99,7 +99,7 @@ void ub_torch_bcast(void *data, size_t bytes, int64_t src, char *group) {
 */
 void ub_paddle_barrier(char *group) {
   NVTE_CHECK(_callback_holder, 
-        "Internal TE error: must set paddle.distributed callbacks during initialize_ub()");
+        "TE internal error: must set paddle.distributed callbacks during initialize_ub()");
   _callback_holder->barrier(group);
 }
 
@@ -108,17 +108,17 @@ inline static auto get_element_size(const paddle::Tensor &x) {
 }
 
 /***************************************************************************************************
-** CommGemmOverlap -- Collective (pipelined) comm+GEMM wrappers for PyTorch
+** CommGemmOverlapP2P -- Point-2-Point (ring-exchange) comm+GEMM wrappers for PyTorch
 ***************************************************************************************************/
 
-UbufP2PCommOverlap::UbufP2PCommOverlap(
+CommGemmOverlapP2P::CommGemmOverlapP2P(
   const paddle::Tensor &sample, int world_rank, int world_size, int local_rank, int local_size, 
   int node_id, int num_nodes, int tp_size, int num_max_streams, int cga_size, int num_comm_sms, 
   bool set_sm_margin, bool use_ce, bool atomic_gemm, bool aggregate, bool is_reduce_scatter)
     : transformer_engine::common::CommGemmOverlapP2P(world_rank, world_size, local_rank, local_size, node_id, num_nodes, 
                           tp_size, num_max_streams, cga_size, num_comm_sms, set_sm_margin, use_ce, atomic_gemm, aggregate, 
                           is_reduce_scatter, &ub_paddle_allgather, &ub_torch_bcast, &ub_paddle_barrier) {
-  NVTE_CHECK(!atomic_gemm, "atomic_gemm is not supported yet"); //TODO: 
+  NVTE_CHECK(!atomic_gemm, "atomic_gemm is not supported yet"); //TODO(anderson): tp-comm-overlap for fp8
   
   const auto element_size = get_element_size(sample);
   _ubuf_bytes = sample.numel() * element_size;
@@ -156,7 +156,7 @@ UbufP2PCommOverlap::UbufP2PCommOverlap(
   }
 }
 
-void UbufP2PCommOverlap::split_overlap_ag(
+void CommGemmOverlapP2P::split_overlap_ag(
   const paddle::Tensor &A, const optional_tensor_ref A_scale_inverse,
   const paddle::Tensor &B, const optional_tensor_ref B_scale_inverse,
   const optional_tensor_ref bias, /*out*/paddle::Tensor &D,     // NOLINT
@@ -168,13 +168,13 @@ void UbufP2PCommOverlap::split_overlap_ag(
   int64_t D_type, int64_t bias_type, bool transa, bool transb, bool grad,
   int64_t workspace_size, bool accumulate, bool use_split_accumulator) { 
 
-  TensorWrapper A_, B_, D_, bias_, pre_gelu_out_, workspace_; //TODO: replace with Structured binding after C++17
+  TensorWrapper A_, B_, D_, bias_, pre_gelu_out_, workspace_; //TODO(anderson): replace with Structured binding after C++17
   std::tie(A_, B_, D_, bias_, pre_gelu_out_, workspace_) = _wrap_tensors(A, A_scale_inverse, B, B_scale_inverse, 
     bias, D, D_scale, D_amax, pre_gelu_out, workspace, A_index, B_index, D_index, A_type, B_type, D_type, bias_type, workspace_size);
 
   auto B_copy_ =
       MakeNvteTensor(GetOptionalDataPtr(B_copy), GetShapeArray(B_copy), Int2NvteDType(B_type), nullptr,
-                     nullptr, reinterpret_cast<void*>(B_.scale_inv())); //TODO: why pass B_copy from python layer? could we allocate it in-place?
+                     nullptr, reinterpret_cast<void*>(B_.scale_inv()));
 
   if (is_fp8_ubuf()) {
     NVTE_CHECK(_ubuf_scale_inv_initialized, "Missing userbuffers FP8 inverse scale!");
@@ -196,7 +196,7 @@ void UbufP2PCommOverlap::split_overlap_ag(
   //return D;
 }
 
-void UbufP2PCommOverlap::split_overlap_rs(
+void CommGemmOverlapP2P::split_overlap_rs(
   const paddle::Tensor &A, const optional_tensor_ref A_scale_inverse,
   const paddle::Tensor &B, const optional_tensor_ref B_scale_inverse,
   const optional_tensor_ref bias, /*out*/paddle::Tensor &D,    // NOLINT
@@ -208,7 +208,7 @@ void UbufP2PCommOverlap::split_overlap_rs(
   int64_t D_type, int64_t bias_type, bool transa, bool transb, bool grad,
   int64_t workspace_size, bool accumulate, bool use_split_accumulator) {                              // NOLINT
 
-  TensorWrapper A_, B_, D_, bias_, pre_gelu_out_, workspace_; //TODO: replace with Structured binding after C++17
+  TensorWrapper A_, B_, D_, bias_, pre_gelu_out_, workspace_; //TODO(anderson): replace with Structured binding after C++17
   std::tie(A_, B_, D_, bias_, pre_gelu_out_, workspace_) = _wrap_tensors(A, A_scale_inverse, B, B_scale_inverse, 
     bias, D, D_scale, D_amax, pre_gelu_out, workspace, A_index, B_index, D_index, A_type, B_type, D_type, bias_type, workspace_size);
 
@@ -238,8 +238,8 @@ void UbufP2PCommOverlap::split_overlap_rs(
     reduce_fp8_in_bf16_out<__nv_fp8_e4m3>(reduce_buf_ptr, rs_output.data(), _ubuf_scale_inv_ptr,
                                           _tp_size, _ubufs[0].numel(), (cudaStream_t)stream_main);
   } else {
-    using paddle::experimental::sum;     //TODO: wait `sum` to become formal API
-    using paddle::experimental::assign_out_; //TODO: WARNING!! `assign_out_` does *copy*. we need some in-place operation like torch::sum_out
+    using paddle::experimental::sum;     //TODO(anderson): wait `sum` to become formal API
+    using paddle::experimental::assign_out_; //TODO(anderson): WARNING!! `assign_out_` does *copy*. we need some in-place operation like torch::sum_out
     paddle::Tensor reduce_buf = paddle::from_blob(
         reduce_buf_ptr, {_tp_size, _ubufs[0].shape()[0], _ubufs[0].shape()[1]}, _ubuf.dtype(), _ubuf.layout(), _ubuf.place());
     assign_out_(sum(reduce_buf, {0}), rs_output); //rs_output = torch::sum_out(rs_output, reduce_buf, 0);
@@ -253,7 +253,7 @@ void UbufP2PCommOverlap::split_overlap_rs(
   NVTE_CHECK_CUDA(cudaStreamWaitEvent((cudaStream_t)stream_main, _stop_send, 0));
 }
 
-void UbufP2PCommOverlap::copy_input_to_ubuf(const paddle::Tensor &input, bool chunk) {
+void CommGemmOverlapP2P::copy_input_to_ubuf(const paddle::Tensor &input, bool chunk) {
   const auto stream_main = input.stream(); //at::cuda::CUDAStream stream_main = at::cuda::getCurrentCUDAStream();
   auto ubuf = chunk 
                     ? _ubufs[_tp_id] // Copy input to the target ubuf chunk by rank offset
@@ -267,7 +267,7 @@ void UbufP2PCommOverlap::copy_input_to_ubuf(const paddle::Tensor &input, bool ch
                                   cudaMemcpyDeviceToDevice, stream_main));
 }
 
-paddle::Tensor UbufP2PCommOverlap::get_ubuf_output(NVTE_Comm_Overlap_Type comm_type) {
+paddle::Tensor CommGemmOverlapP2P::get_ubuf_output(NVTE_Comm_Overlap_Type comm_type) {
   byte *ubuf_wt_ptr = reinterpret_cast<byte *>(_ubuf.data());
   int output_c_dim0 = _ubuf.shape()[0];
   if (comm_type == NVTE_Comm_Overlap_Type::REDUCE_SCATTER) {
@@ -277,7 +277,7 @@ paddle::Tensor UbufP2PCommOverlap::get_ubuf_output(NVTE_Comm_Overlap_Type comm_t
   return paddle::from_blob(ubuf_wt_ptr, {output_c_dim0, _ubuf.shape()[1]}, _ubuf.dtype(), _ubuf.layout(), _ubuf.place());
 }
 
-bool UbufP2PCommOverlap::is_fp8_ubuf() {
+bool CommGemmOverlapP2P::is_fp8_ubuf() {
   return get_element_size(_ubuf) == 1;
 }
 
@@ -286,7 +286,7 @@ std::tuple<TensorWrapper/*A_*/,
            TensorWrapper/*D_*/, 
            TensorWrapper/*bias_*/,
            TensorWrapper/*pre_gelu_out_*/,
-           TensorWrapper/*workspace_*/> UbufP2PCommOverlap::_wrap_tensors(
+           TensorWrapper/*workspace_*/> CommGemmOverlapP2P::_wrap_tensors(
   const paddle::Tensor &A, const optional_tensor_ref A_scale_inverse,
   const paddle::Tensor &B, const optional_tensor_ref B_scale_inverse,
   const optional_tensor_ref bias, /*out*/paddle::Tensor &D,    // NOLINT

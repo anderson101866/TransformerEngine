@@ -64,10 +64,10 @@ void set_comm_overlap_callbacks(PaddleDistributedCallbackHolder *callback_holder
  *  but only support C function via `PD_BUILD_OP`,
  *  We expose directly this class as python cpp-extension through pybind's py::class_ interface.
  */
-class UbufP2PCommOverlap : 
+class CommGemmOverlapP2P : 
   public transformer_engine::common::CommGemmOverlapP2P {  
 public:
-  UbufP2PCommOverlap(const paddle::Tensor &sample, int world_rank, int world_size, int local_rank, int local_size, 
+  CommGemmOverlapP2P(const paddle::Tensor &sample, int world_rank, int world_size, int local_rank, int local_size, 
                      int node_id, int num_nodes, int tp_size, int num_max_streams, int cga_size, int num_comm_sms, 
                      bool set_sm_margin, bool use_ce, bool atomic_gemm, bool aggregate, bool is_reduce_scatter);
   /*
