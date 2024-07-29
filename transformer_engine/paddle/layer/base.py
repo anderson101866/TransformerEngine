@@ -127,7 +127,7 @@ class _UBufGemmManager:
         
         if not tex.device_supports_multicast():
             assert (
-                bool(os.getenv("UB_SKIPMC", "0"))
+                bool(os.getenv("UB_SKIPMC", False))
             ), (
                 "CUDA device, driver and/or toolkit version does not support comm+GEMM overlap with "
                 + "CUDA Multicast. Launch app with UB_SKIPMC=1 to try CUDA IPC instead."
