@@ -150,10 +150,10 @@ def _linear_fwd_non_fp8(
     ub_name: Optional[UbGEMM] = None,
 ):
     """Non-FP8 path of Linear Fwd"""
-    
+
     tp_world_size = get_distributed_world_size(tp_group)
     if tp_world_size == 1:
-        ub_overlap_ag = ub_overlap_rs = False 
+        ub_overlap_ag = ub_overlap_rs = False
 
     # Column Parallel Linear
     if parallel_mode == "column" and sequence_parallel:
@@ -178,23 +178,23 @@ def _linear_fwd_non_fp8(
             paddle.abs(weight)
         ).item()
         fp8_meta["update_amax_and_scale_fwd"] = True
-    
+
     # Row Parallel Linear
-    if ub_overlap_rs:        
+    if ub_overlap_rs:
         assert sequence_parallel, "Enable user_buffer means the gemm and all-gather/reduce-scatter are calculated simultaneously; which means to user must enable `sequence_parallel`"
         ub_algo = tex.NVTE_Comm_Overlap_Algo.SPLIT_PIPELINED_RS_P2P
-        
+
         assert ub_name.with_reduce_scatter(), f"ub_overlap_rs=True imply to do reduce-scattered(RS) to the GEMM output, but the given {ub_name} isn't before RS"
         ub_obj = get_ub(ub_name)
         out = ub_obj.get_ubuf_output(tex.NVTE_Comm_Overlap_Type.AG)
         rs_out = paddle.empty((
-                inputmat_total.shape[0] // tp_world_size, 
+                inputmat_total.shape[0] // tp_world_size,
                 weight.shape[0] #out_feature
             ), dtype=activation_dtype)
     else: #w/o tp-comm-overlap
         out = None
         ub_algo = ub_obj = rs_out = None
-    
+
     outputs = gemm(
         weight,
         inputmat_total,
@@ -693,7 +693,7 @@ class _Linear(paddle.autograd.PyLayer):
                 fwd_scale_inverses,
             ) = saved_tensor_allow_none(ctx)
 
-            if ctx.ub_overlap_ag: 
+            if ctx.ub_overlap_ag:
                 ctx.ub_obj_gradout = get_ub(ctx.ub_name.get_dgrad())
                 ub_algo = tex.NVTE_Comm_Overlap_Algo.SPLIT_PIPELINED_AG_P2P
             else:
@@ -897,7 +897,7 @@ class Linear(TransformerEngineBaseLayer):
             self.gemm_bias_fused_add = False
         else:
             self.gemm_bias_fused_add = True
-            
+
         if self.backend == "paddle" and (ub_overlap_rs or ub_overlap_ag or ub_name):
             warnings.warn(
                 "userbuffer overlaping (tp-comm-overlap) is not supported for paddle backend and all `ub_*` arguments are ignored."

@@ -71,24 +71,24 @@ class UbGEMM(Enum):
     fc1_dgrad  = auto()
     fc2_fprop  = auto()
     fc2_dgrad  = auto()
-    
+
     def with_reduce_scatter(self):
-        return self in {UbGEMM.proj_fprop, UbGEMM.fc2_fprop, UbGEMM.fc1_dgrad, UbGEMM.qkv_dgrad}  
+        return self in {UbGEMM.proj_fprop, UbGEMM.fc2_fprop, UbGEMM.fc1_dgrad, UbGEMM.qkv_dgrad}
 
     def is_fprop(self):
         return self in _fprop_to_dgrad
     def get_dgrad(self):
         return _fprop_to_dgrad[self]
-    
+
     def is_qkv(self):
         return self == UbGEMM.qkv_fprop or self == UbGEMM.qkv_dgrad
     def is_proj(self):
         return self == UbGEMM.proj_fprop or self == UbGEMM.proj_dgrad
-    
+
 _fprop_to_dgrad = {
-    UbGEMM.qkv_fprop:  UbGEMM.qkv_dgrad, 
-    UbGEMM.proj_fprop: UbGEMM.proj_dgrad, 
-    UbGEMM.fc1_fprop:  UbGEMM.fc1_dgrad, 
+    UbGEMM.qkv_fprop:  UbGEMM.qkv_dgrad,
+    UbGEMM.proj_fprop: UbGEMM.proj_dgrad,
+    UbGEMM.fc1_fprop:  UbGEMM.fc1_dgrad,
     UbGEMM.fc2_fprop:  UbGEMM.fc2_dgrad,
 }
 
@@ -97,7 +97,7 @@ def initialize_ub(shape: Union[list, tuple], dtype, tp_size: int):
     global _ub_manager
     assert _ub_manager is None, "UB manager are already initialized."
     _ub_manager = _UBufGemmManager(shape, dtype, tp_size)
-    
+
 def get_ub(ub: UbGEMM) -> tex.CommGemmOverlapP2P:
     """
     Get userbuffer communicator corresponding to give key.
@@ -106,16 +106,16 @@ def get_ub(ub: UbGEMM) -> tex.CommGemmOverlapP2P:
     global _ub_manager
     assert _ub_manager is not None, "UB manager is not initialized."
     return _ub_manager.get_ub(ub)
-    
+
 def destroy_ub():
     global _ub_manager
-    _ub_manager = None    
+    _ub_manager = None
 
 class _UBufGemmManager:
     def __init__(
-        self, 
-        shape: Union[list, tuple], 
-        dtype: paddle.dtype, 
+        self,
+        shape: Union[list, tuple],
+        dtype: paddle.dtype,
         tp_size: int,
         use_fp8: bool = False,
     ):
@@ -124,7 +124,7 @@ class _UBufGemmManager:
             shape: the to stored a batch of data sample. e.g. [SxB, H]
         """
         assert len(shape) == 2, 'shape should be [SxB, H]'
-        
+
         if not tex.device_supports_multicast():
             assert (
                 bool(os.getenv("UB_SKIPMC", False))
@@ -132,11 +132,11 @@ class _UBufGemmManager:
                 "CUDA device, driver and/or toolkit version does not support comm+GEMM overlap with "
                 + "CUDA Multicast. Launch app with UB_SKIPMC=1 to try CUDA IPC instead."
             )
-        
+
         assert paddle.distributed.is_initialized()
         world_group = paddle.distributed.new_group(backend="nccl")
         world_rank = paddle.distributed.get_rank(world_group)
-        world_size = paddle.distributed.get_world_size(world_group)
+        world_size = get_distributed_world_size(world_group)
 
         # Construct an intra-node communicator -- this should include ALL ranks in the node
         # NOTE: This may be different than the tensor-parallel group (e.g. two TP groups in a node),
@@ -167,34 +167,34 @@ class _UBufGemmManager:
                 end='',
                 flush=True
             )
-            
+
         self.ub_pgs = {
             "world": world_group,      #static char EXT_COMM_WORLD[] = "world";
             "intra": intra_node_group, #static char EXT_COMM_INTRA[] = "intra";
         }
-        
+
         # Increase the workspace by the number of maximum concurrent streams
         global _cublas_workspace
         #_cublas_workspace = get_workspace().tile((tex.NVTE_COMM_OVERLAP_MAX_STREAMS,))
         _cublas_workspace = get_workspace().expand(shape=(tex.NVTE_COMM_OVERLAP_MAX_STREAMS, -1)).reshape((-1,))
-        
+
         self.__set_bootstrap_callbacks()
-        self.__add_ub(shape, dtype, 
+        self.__add_ub(shape, dtype,
                       world_rank, world_size, local_rank, local_size, node_id, num_nodes, tp_size,
                       use_fp8)
 
     def get_ub(self, ub: UbGEMM):
         assert ub is not None, f"TE internal error: nn Layers should ensure non-None `ub`, and reject user's bad argument"
         return self.__ub_communicators[ub]
-            
+
     def __set_bootstrap_callbacks(self):
-        """Set the collective API provided by paddle framework, to implement TP comm overlap using userbuffers."""        
+        """Set the collective API provided by paddle framework, to implement TP comm overlap using userbuffers."""
         def allgather_callback(global_data: paddle.Tensor, local_data: paddle.Tensor, group: str):
             assert (
-                global_data.place.is_cpu_place() and local_data.place.is_cpu_place()                
+                global_data.place.is_cpu_place() and local_data.place.is_cpu_place()
             ), ("TE internal error: Comm+GEMM overlap bootstrap callbacks need host (CPU) tensors."
               f" global_data:{global_data.place} local_data:{local_data.place}")
-            
+
             # Move tensors to device if using NCCL backend
             pg = self.ub_pgs[group]
             if paddle.distributed.get_backend(pg) == "NCCL":
@@ -211,7 +211,7 @@ class _UBufGemmManager:
             assert (
                 data.place.is_cpu_place()
             ), "TE internal error: Comm+GEMM overlap bootstrap callbacks need host (CPU) tensors."
-            
+
             pg = self.ub_pgs[group]
             if paddle.distributed.get_backend(pg) == "NCCL":
                 data_in_gpu = data.cuda()
@@ -221,14 +221,14 @@ class _UBufGemmManager:
                 paddle.assign(data_in_gpu.cpu(), output=data)
             else:
                 paddle.distributed.broadcast(data, src, pg)
-        
+
         def barrier_callback(group: str):
             paddle.distributed.barrier(group=self.ub_pgs[group])
 
         tex.set_comm_overlap_callbacks(tex._dist_callback_holder, allgather_callback, bcast_callback, barrier_callback)
 
-    def __add_ub(self, shape, dtype, 
-                 world_rank, world_size, local_rank, local_size, node_id, num_nodes, tp_size, 
+    def __add_ub(self, shape, dtype,
+                 world_rank, world_size, local_rank, local_size, node_id, num_nodes, tp_size,
                  use_fp8):
         """preprate Ub object for each GEMM ops"""
         self.__ub_communicators = {}
