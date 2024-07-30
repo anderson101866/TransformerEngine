@@ -9,6 +9,7 @@ from typing import Union, Tuple, Dict, Any, Optional
 import paddle
 import paddle.nn.functional as F
 from paddle.nn.initializer import Constant
+from transformer_engine import transformer_engine_paddle as tex
 
 from .base import (
     TransformerEngineBaseLayer,
@@ -45,7 +46,6 @@ from ..utils import (
     saved_tensor_allow_none,
     clear_tensor_data,
 )
-from transformer_engine import transformer_engine_paddle as tex
 
 __all__ = ["Linear"]
 
@@ -146,7 +146,7 @@ def _linear_fwd_non_fp8(
     tp_group: Union[dist_group_type, None],
     activation: str = "",
     ub_overlap_rs: bool = False,
-    ub_overlap_ag: bool = False,
+    ub_overlap_ag: bool = False, #TODO(anderson): apply tp-comm-overlap for Linear+AG # pylint: disable=unused-argument
     ub_name: Optional[UbGEMM] = None,
 ):
     """Non-FP8 path of Linear Fwd"""

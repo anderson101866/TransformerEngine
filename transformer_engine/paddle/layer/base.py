@@ -22,6 +22,8 @@ except ImportError:
     from paddle.fluid import core
     from paddle.fluid.framework import _dygraph_tracer
 
+from transformer_engine import transformer_engine_paddle as tex
+
 from ..constants import FP8FwdTensors, FP8BwdTensors, dist_group_type
 from ..cpp_extensions import cast_transpose, cast_transpose_bgrad, cast_to_fp8, transpose
 from ..fp8 import (
@@ -43,7 +45,6 @@ _2X_ACC_DGRAD = True
 _2X_ACC_WGRAD = True
 _cublas_workspace = None
 
-from transformer_engine import transformer_engine_paddle as tex
 
 def get_cublas_workspace_size_bytes() -> None:
     """Return 32 MiB if using hopper, 4 MiB for all other architectures."""
@@ -63,6 +64,7 @@ def get_workspace() -> paddle.Tensor:
     return _cublas_workspace
 
 class UbGEMM(Enum):
+    """GEMM layers that can apply tp-comm-overlap"""
     qkv_fprop  = auto()
     qkv_dgrad  = auto()
     proj_fprop = auto()
@@ -73,17 +75,22 @@ class UbGEMM(Enum):
     fc2_dgrad  = auto()
 
     def with_reduce_scatter(self):
+        """Return if `self` is a GEMM after RS operation in a Transformer block"""
         return self in {UbGEMM.proj_fprop, UbGEMM.fc2_fprop, UbGEMM.fc1_dgrad, UbGEMM.qkv_dgrad}
 
     def is_fprop(self):
+        """Return if `self` is a forward propagation"""
         return self in _fprop_to_dgrad
     def get_dgrad(self):
+        """Get the corresponding dgrad GEMM of the given forward propagation(`self`)"""
         return _fprop_to_dgrad[self]
 
     def is_qkv(self):
-        return self == UbGEMM.qkv_fprop or self == UbGEMM.qkv_dgrad
+        """Return if this GEMM applies QKV projection"""
+        return self in (UbGEMM.qkv_fprop, UbGEMM.qkv_dgrad)
     def is_proj(self):
-        return self == UbGEMM.proj_fprop or self == UbGEMM.proj_dgrad
+        """Return if this GEMM applies output projection"""
+        return self in (UbGEMM.proj_fprop, UbGEMM.proj_dgrad)
 
 _fprop_to_dgrad = {
     UbGEMM.qkv_fprop:  UbGEMM.qkv_dgrad,
@@ -94,24 +101,24 @@ _fprop_to_dgrad = {
 
 _ub_manager = None
 def initialize_ub(shape: Union[list, tuple], dtype, tp_size: int):
+    """Initialize communicators for TP comm overlap using userbuffers."""
     global _ub_manager
     assert _ub_manager is None, "UB manager are already initialized."
     _ub_manager = _UBufGemmManager(shape, dtype, tp_size)
 
 def get_ub(ub: UbGEMM) -> tex.CommGemmOverlapP2P:
-    """
-    Get userbuffer communicator corresponding to give key.
-    NOTE: We don't implicitly expost this low-level API to user. Only te.Linear or other nn layer will use it.
-    """
+    """Get userbuffer communicator corresponding to give key."""
+    #NOTE: We don't implicitly expost this low-level API to user. Only te.Linear or other nn layer will use it.
     global _ub_manager
     assert _ub_manager is not None, "UB manager is not initialized."
     return _ub_manager.get_ub(ub)
 
 def destroy_ub():
+    """Destroy all allocated userbuffer communicators."""
     global _ub_manager
     _ub_manager = None
 
-class _UBufGemmManager:
+class _UBufGemmManager: #pylint: disable=too-few-public-methods
     def __init__(
         self,
         shape: Union[list, tuple],
@@ -127,7 +134,7 @@ class _UBufGemmManager:
 
         if not tex.device_supports_multicast():
             assert (
-                bool(os.getenv("UB_SKIPMC", False))
+                bool(os.getenv("UB_SKIPMC", None))
             ), (
                 "CUDA device, driver and/or toolkit version does not support comm+GEMM overlap with "
                 + "CUDA Multicast. Launch app with UB_SKIPMC=1 to try CUDA IPC instead."
@@ -184,7 +191,8 @@ class _UBufGemmManager:
                       use_fp8)
 
     def get_ub(self, ub: UbGEMM):
-        assert ub is not None, f"TE internal error: nn Layers should ensure non-None `ub`, and reject user's bad argument"
+        """Get userbuffer communicator corresponding to give key."""
+        assert ub is not None, "TE internal error: nn Layers should ensure non-None `ub`, and reject user's bad argument"
         return self.__ub_communicators[ub]
 
     def __set_bootstrap_callbacks(self):
