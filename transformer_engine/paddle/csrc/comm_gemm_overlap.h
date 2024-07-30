@@ -5,18 +5,7 @@
  ************************************************************************/
 #pragma once
 
-#if __cplusplus >= 201703L
-  #include <optional>
-#elif __cplusplus >= 201402L
-  #include <experimental/optional>
-  #ifndef PYBIND11_HAS_EXP_OPTIONAL
-    #define PYBIND11_HAS_EXP_OPTIONAL 1 //paddle's dependency define <optional> in c++17, which confuse pybind11 from correctly defining PYBIND11_HAS_EXP_OPTIONAL. Here forcely define it
-  #endif
-  #include <pybind11/stl.h>
-  #define EXP_OPTIONAL_OF_TENSOR
-#else
-  #error "__cplusplus is undefined!"
-#endif
+#include "use_exp_optional.h"
 
 #include <functional>
 #include <vector>
@@ -30,8 +19,7 @@ namespace transformer_engine {
 namespace paddle_ext {
 namespace comm_gemm_overlap {
 
-//using optional_tensor_ref = paddle::optional<paddle::Tensor>&;
-//using optional_tensor_ref = paddle::Tensor*;
+//Use std::optonal<Tensor> instead of paddle::optional<Tensor>& because paddle::optional doesn't implement `emplace`, so it can't bind as pybind's C API
 #ifndef EXP_OPTIONAL_OF_TENSOR
   using optional_tensor_ref = std::optional<paddle::Tensor>;
 #else
@@ -55,7 +43,7 @@ public:
  */
 void set_comm_overlap_callbacks(PaddleDistributedCallbackHolder *callback_holder, 
   const std::function<void(/*out*/paddle::Tensor &, const paddle::Tensor &, const std::string &)> &allgather,
-  const std::function<void(/*out*/paddle::Tensor &, int64_t, const std::string &)> bcast,
+  const std::function<void(/*out*/paddle::Tensor &, int64_t, const std::string &)> &bcast,
   const std::function<void(const std::string &)> &barrier);
 
 /** 

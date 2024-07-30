@@ -3,18 +3,7 @@
  *
  * See LICENSE for license information.
  ************************************************************************/
-#if __cplusplus >= 201703L
-  #include <optional>
-#elif __cplusplus >= 201402L
-  #include <experimental/optional>
-  #ifndef PYBIND11_HAS_EXP_OPTIONAL
-    #define PYBIND11_HAS_EXP_OPTIONAL 1 //paddle's dependency define <optional> in c++17, which confuse pybind11 from correctly defining PYBIND11_HAS_EXP_OPTIONAL. Here forcely define it
-  #endif
-  #include <pybind11/stl.h>
-  #define EXP_OPTIONAL_OF_TENSOR
-#else
-  #error "__cplusplus is undefined!"
-#endif
+#include "use_exp_optional.h"
 
 #include "common.h"
 #include "common/util/pybind_helper.h"
@@ -34,26 +23,25 @@ PYBIND11_MODULE(transformer_engine_paddle, m) {
   // essential NVTE enums available through `import transformer_engine_paddle` without requiring
   // an additional `import transformer_engine_common as tex`.
   NVTE_ADD_COMMON_PYBIND11_BINDINGS(m)
-  
+
   // Comm+GEMM Overlap
   py::class_<te_cgo::PaddleDistributedCallbackHolder>(m, "PaddleDistributedCallbackHolder")
-    .def(py::init<>());
-  m.attr("_dist_callback_holder") = py::cast(
-    std::make_unique<te_cgo::PaddleDistributedCallbackHolder>(), 
-    py::return_value_policy::take_ownership //module m track its lifecycle
-  );
+      .def(py::init<>());
+  m.attr("_dist_callback_holder") =
+      py::cast(std::make_unique<te_cgo::PaddleDistributedCallbackHolder>(),
+               py::return_value_policy::take_ownership  //module m track its lifecycle
+      );
   m.def("set_comm_overlap_callbacks", &te_cgo::set_comm_overlap_callbacks,
-    py::arg("callback_holder").none(false), //to reject None
-    py::arg("allgather"),
-    py::arg("bcast"),
-    py::arg("barrier")
-  );
-  
+        py::arg("callback_holder").none(false),  //to reject None
+        py::arg("allgather"), py::arg("bcast"), py::arg("barrier"));
+
   py::class_<te_cgo::CommGemmOverlapP2P>(m, "CommGemmOverlapP2P", py::module_local())
-      .def(py::init<const paddle::Tensor & /* sample */, int /* world_rank */, int /* world_size */, int /* local_rank */, 
-                    int /* local_size */, int /* node_id */, int /* num_nodes */, int /* num_max_streams */, int /* tp_size */, 
-                    int /* cga_size */, int /* num_comm_sms */, bool /* set_sm_margin */, bool /* use_ce */, 
-                    bool /* atomic_gemm */, bool /* aggregate */, bool /* is_reduce_scatter */>())
+      .def(py::init<const paddle::Tensor& /* sample */, int /* world_rank */, int /* world_size */,
+                    int /* local_rank */, int /* local_size */, int /* node_id */,
+                    int /* num_nodes */, int /* num_max_streams */, int /* tp_size */,
+                    int /* cga_size */, int /* num_comm_sms */, bool /* set_sm_margin */,
+                    bool /* use_ce */, bool /* atomic_gemm */, bool /* aggregate */,
+                    bool /* is_reduce_scatter */>())
       .def("split_overlap_ag_p2p", &te_cgo::CommGemmOverlapP2P::split_overlap_ag,
            py::call_guard<py::gil_scoped_release>())
       .def("split_overlap_rs_p2p", &te_cgo::CommGemmOverlapP2P::split_overlap_rs,
