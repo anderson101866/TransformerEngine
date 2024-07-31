@@ -80,7 +80,7 @@ class _TestLinearTpBase(unittest.TestCase):
         else:
             grad_input = input_parallel.grad
         return loss, grad_input
-    
+
     def _create_pd_linear(self, layer_te: te.Linear, axis: int=0):
         """Create a normal Paddle nn.Linear with weight=[in_features, out_features] for comparing result"""
         layer_pd = te.Linear(
@@ -97,7 +97,7 @@ class _TestLinearTpBase(unittest.TestCase):
         return layer_pd
 
 ##############################################################################
-# Unittest for Linear layer in tp-comm-overlap, 
+# Unittest for Linear layer in tp-comm-overlap,
 # (which imply both tensor parallel + sequence parallel is applied as 'comm')
 ##############################################################################
 class TestLinearUbOverlapRS(_TestLinearTpBase):
@@ -112,16 +112,16 @@ class TestLinearUbOverlapRS(_TestLinearTpBase):
         self.atol = 0.001
         self.fp8 = False
         self.sequence_parallel = True
-        
+
     def test_fc2_layer(self):
         """Tests fc2(row parallel linear) overlapping with RS(Reduce scatter)"""
         set_random_seed(1024)
-        
+
         FFN = self.in_features
         H = self.out_features
-        
-        te.initialize_ub([self.batch_size, H], paddle.bfloat16, self.model_parallel_size)    
-        
+
+        te.initialize_ub([self.batch_size, H], paddle.bfloat16, self.model_parallel_size)
+
         layer_te = te.Linear(
             self.in_features,
             self.out_features,
@@ -131,7 +131,7 @@ class TestLinearUbOverlapRS(_TestLinearTpBase):
             ub_overlap_ag = True,
             ub_name=te.UbGEMM.fc2_fprop,
         )
-        
+
         layer_pd = self._create_pd_linear(layer_te, axis=1)
 
         assert_shape(
@@ -150,7 +150,7 @@ class TestLinearUbOverlapRS(_TestLinearTpBase):
 
         for _ in range(5):
             inp = paddle.rand([self.batch_size, FFN], self.global_dtype)
-            
+
             loss_ref, grad_input_ref = self._train_one_step(layer_pd, inp, optimizer_pd)
             #with te.fp8_autocast(enabled=self.fp8):
             loss_tp, grad_input = self._train_one_step(
