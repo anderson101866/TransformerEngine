@@ -13,7 +13,7 @@ from utils import assert_allclose, assert_shape, set_random_seed
 import transformer_engine.paddle as te
 
 class _TestLinearTpBase(unittest.TestCase):
-    """Tests Linear layer with column/row parallelism in BF16"""
+    """base class for common implementation for derived class"""
 
     def setUp(self):
         self.set_attr()
@@ -35,17 +35,6 @@ class _TestLinearTpBase(unittest.TestCase):
         self.hcg = fleet.get_hybrid_communicate_group()
         self.tp_group = self.hcg.get_model_parallel_group()
         self.world_size = self.hcg.get_model_parallel_world_size()
-
-    def set_attr(self):
-        """Set test configs"""
-        self.batch_size = 16
-        self.in_features = 32
-        self.out_features = 64
-        self.global_dtype = "bfloat16"
-        self.rtol = 1e-3
-        self.atol = 1e-3
-        self.fp8 = False
-        self.sequence_parallel = False
 
     def _train_one_step(self, layer, inp, optimizer, split_input="none", gather_output=False):
         inp = paddle.to_tensor(inp, stop_gradient=True)
@@ -80,7 +69,7 @@ class _TestLinearTpBase(unittest.TestCase):
         else:
             grad_input = input_parallel.grad
         return loss, grad_input
-    
+
     def _create_pd_linear(self, layer_te: te.Linear, axis: int=0):
         """Create a normal Paddle nn.Linear with weight=[in_features, out_features] for comparing result"""
         layer_pd = te.Linear(
@@ -98,7 +87,17 @@ class _TestLinearTpBase(unittest.TestCase):
 
 class TestLinearTp(_TestLinearTpBase):
     """Tests Linear layer with column/row parallelism in BF16"""
-    
+    def set_attr(self):
+        """Set test configs"""
+        self.batch_size = 16
+        self.in_features = 32
+        self.out_features = 64
+        self.global_dtype = "bfloat16"
+        self.rtol = 1e-3
+        self.atol = 1e-3
+        self.fp8 = False
+        self.sequence_parallel = False
+
     def test_column_parallel_layer(self):
         """Tests column parallel linear"""
         set_random_seed(1024)

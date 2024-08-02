@@ -10,6 +10,7 @@ import pickle
 from typing import Generator, Dict, Tuple, Union, Any, List, Optional
 from enum import Enum, auto
 import socket
+import warnings
 
 import numpy as np
 
@@ -75,7 +76,7 @@ class UbGEMM(Enum):
     fc2_dgrad  = auto()
 
     def with_reduce_scatter(self):
-        """Return if `self` is a GEMM after RS operation in a Transformer block"""
+        """Return if `self` is a GEMM before RS operation in a Transformer block"""
         return self in {UbGEMM.proj_fprop, UbGEMM.fc2_fprop, UbGEMM.fc1_dgrad, UbGEMM.qkv_dgrad}
 
     def is_fprop(self):
@@ -275,6 +276,20 @@ class _UBufGemmManager: #pylint: disable=too-few-public-methods
                 False,
                 is_reduce_scatter,  # Overlapped collective is reduce-scatter
             )
+
+def validate_ub_args(backend: str, ub_overlap_rs: bool, ub_overlap_ag: bool, ub_name: Optional[UbGEMM]) -> Optional[UbGEMM]:
+    """A helper function to reject meaningless argument for nn.Layer like `te.Linear`, `te.LayerNormLinear`"""
+    if backend == "paddle" and (ub_overlap_rs or ub_overlap_ag or ub_name):
+        warnings.warn(
+            "userbuffer overlaping (tp-comm-overlap) is not supported for paddle backend and all `ub_*` arguments will be ignored."
+        )
+    if ub_overlap_rs or ub_overlap_ag:
+        assert ub_name is not None, "Userbuffer name (`ub_name`) is not set."
+        assert ub_name.is_fprop(), f'Please specify a forward propagation UbGEMM as `ub_name`. e.g. {", ".join(ub.name for ub in UbGEMM if ub.is_fprop())}'
+    elif ub_name is not None:
+        warnings.warn("Please set `ub_overlap_rs` or `ub_overlap_ag` to enable userbuffer overlaping (tp-comm-overlap), or `ub_name` argument is ignored.")
+        ub_name = None
+    return ub_name
 
 class TransformerEngineBaseLayer(paddle.nn.Layer, ABC):
     """Base TE Layer."""
@@ -633,7 +648,7 @@ class TransformerEngineBaseLayer(paddle.nn.Layer, ABC):
         # No-FP8 case: bgrad is fused with wgrad for this case.
         if not ctx.fp8_enabled:
             if gather_grad_output:
-                if not ctx.ub_overlap_ag:
+                if ctx.ub_obj_gradout is None:
                     grad_output_mat, _ = allgather(grad_output_mat, ctx.tp_group)
                 else:
                     ctx.ub_obj_gradout.copy_input_to_ubuf(grad_output, True) #do AG later with gemm
@@ -651,10 +666,10 @@ class TransformerEngineBaseLayer(paddle.nn.Layer, ABC):
                     bgrad = grad_output_mat.sum(axis=0)
                 else:
                     bgrad = None
-                if ctx.ub_overlap_ag:
-                    grad_output_c = ctx.ub_obj_gradout.get_ubuf_output(tex.NVTE_Comm_Overlap_Type.RS)
-                else:
+                if ctx.ub_obj_gradout is None:
                     grad_output_c = paddle.empty_like(grad_output_mat, dtype=paddle.uint8)
+                else:
+                    grad_output_c = ctx.ub_obj_gradout.get_ubuf_output(tex.NVTE_Comm_Overlap_Type.RS)
                 #if not isinstance(grad_output_mat, Float8Tensor): #pytorch
                 cast_to_fp8(
                     grad_output_mat,
@@ -663,7 +678,7 @@ class TransformerEngineBaseLayer(paddle.nn.Layer, ABC):
                     fp8_dtype_backward,
                     out=grad_output_c,
                 )
-                if not ctx.ub_overlap_ag:
+                if ctx.ub_obj_gradout is None:
                     grad_output_c, _ = allgather(grad_output_c, ctx.tp_group)
                     #if not isinstance(grad_output_c, Float8Tensor): #pytorch
                     grad_output_t = transpose(grad_output_c, fp8_dtype_backward)
@@ -674,8 +689,8 @@ class TransformerEngineBaseLayer(paddle.nn.Layer, ABC):
                 return grad_output_mat, grad_output_c, grad_output_t, bgrad
 
             assert (
-                not ctx.ub_overlap_ag
-            ), "override_linear_precision.wgrad not supported with UB AG overlap"
+                ctx.ub_obj_gradout is None
+            ), "override_linear_precision.wgrad not supported with `ub_overlap_ag`"
             # FP8 case with gather and non-FP8 wgrad
             grad_output_mat, _ = allgather(grad_output_mat, ctx.tp_group)
 

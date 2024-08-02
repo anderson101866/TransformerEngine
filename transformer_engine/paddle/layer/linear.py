@@ -19,6 +19,7 @@ from .base import (
     _2X_ACC_WGRAD,
     UbGEMM,
     get_ub,
+    validate_ub_args,
 )
 
 from ..constants import FP8FwdTensors, FP8BwdTensors, GemmParallelModes, dist_group_type
@@ -168,11 +169,9 @@ def _linear_fwd_non_fp8(
     weight = cast_if_needed_inplace(weight, activation_dtype)
     bias = cast_if_needed_inplace(bias, activation_dtype)
 
-    if ub_overlap_rs:
+    if ub_overlap_rs and ub_name in (UbGEMM.fc2_fprop, UbGEMM.proj_fprop):
         assert sequence_parallel, "Enable user_buffer means the gemm and all-gather/reduce-scatter are calculated simultaneously; which means to user must enable `sequence_parallel`"
         ub_algo = tex.NVTE_Comm_Overlap_Algo.SPLIT_PIPELINED_RS_P2P
-
-        assert ub_name.with_reduce_scatter(), f"ub_overlap_rs=True imply to do reduce-scattered(RS) to the GEMM output, but the given {ub_name} isn't before RS"
         ub_obj = get_ub(ub_name)
         out = ub_obj.get_ubuf_output(tex.NVTE_Comm_Overlap_Type.AG)
         rs_out = paddle.empty((
@@ -180,8 +179,8 @@ def _linear_fwd_non_fp8(
                 weight.shape[0] #out_feature
             ), dtype=activation_dtype)
     else: #w/o tp-comm-overlap
-        out = None
-        ub_algo = ub_obj = rs_out = None
+        ub_algo = ub_obj = None
+        out = rs_out = None
 
     outputs = gemm(
         weight,
@@ -691,7 +690,7 @@ class _Linear(paddle.autograd.PyLayer):
                 fwd_scale_inverses,
             ) = saved_tensor_allow_none(ctx)
 
-            if ctx.ub_overlap_ag:
+            if ctx.ub_overlap_ag and ctx.ub_name in (UbGEMM.fc2_fprop, UbGEMM.proj_fprop): #Only allows overlap AG for row-parllel-linear in bwd.
                 ctx.ub_obj_gradout = get_ub(ctx.ub_name.get_dgrad())
                 ub_algo = tex.NVTE_Comm_Overlap_Algo.SPLIT_PIPELINED_AG_P2P
             else:
@@ -896,16 +895,7 @@ class Linear(TransformerEngineBaseLayer):
         else:
             self.gemm_bias_fused_add = True
 
-        if self.backend == "paddle" and (ub_overlap_rs or ub_overlap_ag or ub_name):
-            warnings.warn(
-                "userbuffer overlaping (tp-comm-overlap) is not supported for paddle backend and all `ub_*` arguments are ignored."
-            )
-        if ub_overlap_rs or ub_overlap_ag:
-            assert ub_name is not None, "Userbuffer name (`ub_name`) is not set."
-            assert ub_name.is_fprop(), f'Please specify a forward propagation UbGEMM as `ub_name`. e.g. {", ".join(ub.name for ub in UbGEMM if ub.is_fprop())}'
-        elif ub_name is not None:
-            warnings.warn("Please set `ub_overlap_rs` or `ub_overlap_ag` to enable userbuffer overlaping (tp-comm-overlap), or `ub_name` argument is ignored.")
-            ub_name = None
+        ub_name = validate_ub_args(self.backend, ub_overlap_rs, ub_overlap_ag, ub_name)
         self.ub_overlap_rs = ub_overlap_rs
         self.ub_overlap_ag = ub_overlap_ag
         self.ub_name = ub_name
