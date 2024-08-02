@@ -168,18 +168,6 @@ def _linear_fwd_non_fp8(
     weight = cast_if_needed_inplace(weight, activation_dtype)
     bias = cast_if_needed_inplace(bias, activation_dtype)
 
-    if fp8_calibration:
-        # amax of input
-        fp8_meta["scaling_fwd"].amax_history[0, inputmat_fp8_index.value] = paddle.max(
-            paddle.abs(inputmat_total)
-        ).item()
-        # amax of weight
-        fp8_meta["scaling_fwd"].amax_history[0, weight_fp8_index.value] = paddle.max(
-            paddle.abs(weight)
-        ).item()
-        fp8_meta["update_amax_and_scale_fwd"] = True
-
-    # Row Parallel Linear
     if ub_overlap_rs:
         assert sequence_parallel, "Enable user_buffer means the gemm and all-gather/reduce-scatter are calculated simultaneously; which means to user must enable `sequence_parallel`"
         ub_algo = tex.NVTE_Comm_Overlap_Algo.SPLIT_PIPELINED_RS_P2P
@@ -209,6 +197,16 @@ def _linear_fwd_non_fp8(
         extra_output_tensor=rs_out,
     )
 
+    if fp8_calibration:
+        # amax of input
+        fp8_meta["scaling_fwd"].amax_history[0, inputmat_fp8_index.value] = paddle.max(
+            paddle.abs(inputmat_total)
+        ).item()
+        # amax of weight
+        fp8_meta["scaling_fwd"].amax_history[0, weight_fp8_index.value] = paddle.max(
+            paddle.abs(weight)
+        ).item()
+        fp8_meta["update_amax_and_scale_fwd"] = True
 
     if activation == "gelu":
         assert not ub_overlap_rs #TODO(anderson): support MLP with tp-comm-overlap(userbuffer). NOTE: only MLP specify `activation == "gelu"`
