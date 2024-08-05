@@ -13,9 +13,8 @@ from utils import assert_allclose, assert_shape, set_random_seed
 import transformer_engine.paddle as te
 
 
-class TestLayerNormMLPTp(unittest.TestCase):
-    """Tests LayerNormMLP layer with model parallel in BF16"""
-
+class _TestLayerNormMLPTpBase(unittest.TestCase):
+    """base class for common implementation for derived class"""
     def setUp(self):
         self.set_attr()
         self.init_dist_env()
@@ -36,18 +35,6 @@ class TestLayerNormMLPTp(unittest.TestCase):
         self.hcg = fleet.get_hybrid_communicate_group()
         self.tp_group = self.hcg.get_model_parallel_group()
         self.world_size = self.hcg.get_model_parallel_world_size()
-
-    def set_attr(self):
-        """Set test configs"""
-        self.batch_size = 16
-        self.hidden_size = 32
-        self.ffn_hidden_size = 64
-        self.global_dtype = "bfloat16"
-        self.rtol = 1e-3
-        self.atol = 1e-3
-        self.eps = 1e-3
-        self.fp8 = False
-        self.sequence_parallel = False
 
     def _train_one_step(self, layer, inp, optimizer, split_input="none", gather_output=False):
         inp = paddle.to_tensor(inp, stop_gradient=True)
@@ -82,6 +69,42 @@ class TestLayerNormMLPTp(unittest.TestCase):
             grad_input = input_parallel.grad
         return loss, grad_input
 
+    def _create_pd_layer(self, layer_te: te.LayerNormMLP):
+        """Create a LayerNormMLP based on paddle backend with hidden_size, ffn_hidden_size for comparing result"""
+        layer_pd = te.LayerNormMLP(
+            hidden_size=self.hidden_size,
+            ffn_hidden_size=self.ffn_hidden_size,
+            eps=self.eps,
+            set_parallel_mode=False,
+            backend="paddle",
+        )
+        def _get_total_weight(local_weight, tp_group, axis):
+            total_weight = []
+            partial_weight = local_weight.clone().detach()
+            paddle.distributed.all_gather(total_weight, partial_weight, group=tp_group)
+            total_weight = paddle.concat(total_weight, axis=axis)
+            return total_weight
+        # Get total weight
+        total_fc1_weight = _get_total_weight(layer_te.fc1_weight, tp_group=self.tp_group, axis=0)
+        total_fc2_weight = _get_total_weight(layer_te.fc2_weight, tp_group=self.tp_group, axis=1)
+        layer_pd.fc1_weight.copy_(total_fc1_weight.T, True)
+        layer_pd.fc2_weight.copy_(total_fc2_weight.T, True)
+        return layer_pd
+
+class TestLayerNormMLPTp(_TestLayerNormMLPTpBase):
+    """Tests LayerNormMLP layer with model parallel in BF16"""
+    def set_attr(self):
+        """Set test configs"""
+        self.batch_size = 16
+        self.hidden_size = 32
+        self.ffn_hidden_size = 64
+        self.global_dtype = "bfloat16"
+        self.rtol = 1e-3
+        self.atol = 1e-3
+        self.eps = 1e-3
+        self.fp8 = False
+        self.sequence_parallel = False
+
     def test_parallel_layer(self):
         """Tests parallel LayerNormMLP"""
         set_random_seed(1024)
@@ -92,26 +115,7 @@ class TestLayerNormMLPTp(unittest.TestCase):
             set_parallel_mode=True,
             sequence_parallel=self.sequence_parallel,
         )
-        layer_pd = te.LayerNormMLP(
-            hidden_size=self.hidden_size,
-            ffn_hidden_size=self.ffn_hidden_size,
-            eps=self.eps,
-            set_parallel_mode=False,
-            backend="paddle",
-        )
-
-        def _get_total_weight(local_weight, tp_group, axis):
-            total_weight = []
-            partial_weight = local_weight.clone().detach()
-            paddle.distributed.all_gather(total_weight, partial_weight, group=tp_group)
-            total_weight = paddle.concat(total_weight, axis=axis)
-            return total_weight
-
-        # Get total weight
-        total_fc1_weight = _get_total_weight(layer_te.fc1_weight, tp_group=self.tp_group, axis=0)
-        total_fc2_weight = _get_total_weight(layer_te.fc2_weight, tp_group=self.tp_group, axis=1)
-        layer_pd.fc1_weight.copy_(total_fc1_weight.T, True)
-        layer_pd.fc2_weight.copy_(total_fc2_weight.T, True)
+        layer_pd = self._create_pd_layer(layer_te)
 
         assert_shape(
             layer_te.fc1_weight,

@@ -10,8 +10,13 @@ from typing import Union, Tuple, Dict, Any, Optional
 import paddle
 import paddle.nn.functional as F
 from paddle.nn.initializer import Constant
+from transformer_engine import transformer_engine_paddle as tex
 
-from .base import TransformerEngineBaseLayer
+from .base import (
+    TransformerEngineBaseLayer,
+    UbGEMM,
+    get_ub,
+)
 from .layernorm_linear import _apply_normalization_fwd, _apply_normalization_bwd
 from .linear import _linear_fwd_fp8, _linear_fwd_non_fp8, _linear_bwd_fp8, _linear_bwd_non_fp8
 from ..constants import TE_DType, FP8FwdTensors, FP8BwdTensors, dist_group_type
@@ -74,6 +79,8 @@ def _mlp_forward(
     sequence_parallel: bool,
     tp_group: Union[dist_group_type, None],
     is_first_microbatch: bool,
+    ub_overlap_rs: bool = False,
+    ub_overlap_ag: bool = False,
 ):
     if fp8_enabled:
         fp8_dtype_forward = get_fp8_te_dtype(fp8_meta["recipe"], fprop_tensor=True)
@@ -94,6 +101,9 @@ def _mlp_forward(
             tp_group,
             is_grad_enabled,
             is_first_microbatch,
+            ub_overlap_rs=ub_overlap_rs,
+            ub_overlap_ag=ub_overlap_ag,
+            ub_name=UbGEMM.fc1_fprop,
         )
         if activation == "gelu":
             gelu_out = gelu_fp8(
@@ -129,6 +139,9 @@ def _mlp_forward(
             tp_group,
             is_grad_enabled,
             is_first_microbatch,
+            ub_overlap_rs=ub_overlap_rs,
+            ub_overlap_ag=ub_overlap_ag,
+            ub_name=UbGEMM.fc2_fprop,
         )
     else:
         fc1_outputs = _linear_fwd_non_fp8(
@@ -146,6 +159,9 @@ def _mlp_forward(
             sequence_parallel,
             tp_group,
             activation=activation,
+            ub_overlap_rs=ub_overlap_rs,
+            ub_overlap_ag=ub_overlap_ag,
+            ub_name=UbGEMM.fc1_fprop,
         )
 
         if activation == "gelu":
@@ -170,6 +186,9 @@ def _mlp_forward(
             tensor_parallel,
             sequence_parallel,
             tp_group,
+            ub_overlap_rs=ub_overlap_rs,
+            ub_overlap_ag=ub_overlap_ag,
+            ub_name=UbGEMM.fc2_fprop,
         )
     return (
         fc1_out,
@@ -213,6 +232,8 @@ def _mlp_backward(
     tp_group: Union[dist_group_type, None],
     fuse_wgrad_accumulation: bool,
     accumulate_wgrad_into_param_main_grad: bool,
+    fc2_ub_obj: Optional[tex.CommGemmOverlapP2P]=None,
+    fc2_ub_algo: Optional[tex.NVTE_Comm_Overlap_Algo]=None,
 ):
     (
         fc1_dgrad,
@@ -264,6 +285,8 @@ def _mlp_backward(
             tp_group,
             fuse_wgrad_accumulation,
             accumulate_wgrad_into_param_main_grad,
+            ub_obj=fc2_ub_obj,
+            ub_algo=fc2_ub_algo,
         )
 
         if activation == "gelu":
@@ -328,6 +351,7 @@ def _mlp_backward(
             tp_group,
             fuse_wgrad_accumulation,
             accumulate_wgrad_into_param_main_grad,
+            #TODO(anderson): implement tp-comm-overlap in bwd like `ub_obj=fc1_ub_obj`
         )
     else:
         dgelu, fc2_wgrad, fc2_bgrad = _linear_bwd_non_fp8(
@@ -346,6 +370,8 @@ def _mlp_backward(
             accumulate_wgrad_into_param_main_grad=accumulate_wgrad_into_param_main_grad,
             gelu_input=fc1_out,
             activation=activation,
+            ub_obj=fc2_ub_obj,
+            ub_algo=fc2_ub_algo,
         )
 
         if activation == "swiglu":
@@ -365,6 +391,7 @@ def _mlp_backward(
             tp_group,
             fuse_wgrad_accumulation=fuse_wgrad_accumulation,
             accumulate_wgrad_into_param_main_grad=accumulate_wgrad_into_param_main_grad,
+            #TODO(anderson): implement tp-comm-overlap in bwd like `ub_obj=fc1_ub_obj`
         )
     return (
         fc1_dgrad,
@@ -413,6 +440,8 @@ class _LayerNormMLP(paddle.autograd.PyLayer):
         tp_size: int,
         fuse_wgrad_accumulation: bool,
         is_first_microbatch: bool,
+        ub_overlap_rs: bool,
+        ub_overlap_ag: bool,
     ) -> Union[Tuple[paddle.Tensor, ...], paddle.Tensor]:
         if normalization == "RMSNorm":
             assert ln_bias is None, "RMSNorm does not support bias!"
@@ -484,6 +513,8 @@ class _LayerNormMLP(paddle.autograd.PyLayer):
             sequence_parallel,
             tp_group,
             is_first_microbatch,
+            ub_overlap_rs,
+            ub_overlap_ag,
         )
 
         if is_grad_enabled:
@@ -528,6 +559,8 @@ class _LayerNormMLP(paddle.autograd.PyLayer):
             ctx.is_first_microbatch = is_first_microbatch
             ctx.has_ln_bias = ln_bias is not None
             ctx.normalization = normalization
+            ctx.ub_overlap_rs = ub_overlap_rs
+            ctx.ub_overlap_ag = ub_overlap_ag
 
         # [*, in_features] -> [*, out_features] except first dimension changes for SP
         fc2_out = fc2_out.reshape((-1, *inp.shape[1:-1], fc2_out.shape[-1]))
@@ -557,6 +590,13 @@ class _LayerNormMLP(paddle.autograd.PyLayer):
                 fc2_weight_t_fp8,
                 fwd_scale_inverses,
             ) = saved_tensor_allow_none(ctx)
+
+            # For grad_output_preprocess
+            if ctx.ub_overlap_ag:
+                ctx.ub_obj_gradout = get_ub(UbGEMM.fc2_dgrad)
+                ub_algo = tex.NVTE_Comm_Overlap_Algo.SPLIT_PIPELINED_AG_P2P
+            else:
+                ctx.ub_obj_gradout = ub_algo = None
 
             ctx.use_bias = ctx.use_fc2_bias  # For grad_output_preprocess
             (
@@ -612,6 +652,8 @@ class _LayerNormMLP(paddle.autograd.PyLayer):
                 ctx.tp_group,
                 ctx.fuse_wgrad_accumulation,
                 accumulate_wgrad_into_param_main_grad,
+                fc2_ub_obj=ctx.ub_obj_gradout,
+                fc2_ub_algo=ub_algo,
             )
             if not ctx.fp8_enabled:
                 # fc2_bias is fused with gemm for non-FP8 path
@@ -737,6 +779,8 @@ class LayerNormMLP(TransformerEngineBaseLayer):
         tp_group: Optional[dist_group_type] = None,
         fuse_wgrad_accumulation: bool = False,
         backend: str = "transformer_engine",
+        ub_overlap_rs: bool = False,
+        ub_overlap_ag: bool = False,
     ) -> None:
         super().__init__()
 
@@ -875,6 +919,9 @@ class LayerNormMLP(TransformerEngineBaseLayer):
         self.bwd_ln_sm_margin = int(os.getenv("NVTE_BWD_LAYERNORM_SM_MARGIN", "0"))
         self.inf_ln_sm_margin = int(os.getenv("NVTE_INF_LAYERNORM_SM_MARGIN", "0"))
 
+        self.ub_overlap_rs = ub_overlap_rs
+        self.ub_overlap_ag = ub_overlap_ag
+
     def _te_forward(
         self,
         inp: paddle.Tensor,
@@ -928,6 +975,8 @@ class LayerNormMLP(TransformerEngineBaseLayer):
                 self.tp_size,
                 self.fuse_wgrad_accumulation,
                 is_first_microbatch,
+                self.ub_overlap_rs,
+                self.ub_overlap_ag,
             )
 
         if self.return_layernorm_output:

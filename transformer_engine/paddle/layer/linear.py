@@ -208,7 +208,7 @@ def _linear_fwd_non_fp8(
         fp8_meta["update_amax_and_scale_fwd"] = True
 
     if activation == "gelu":
-        assert not ub_overlap_rs #TODO(anderson): support MLP with tp-comm-overlap(userbuffer). NOTE: only MLP specify `activation == "gelu"`
+        assert parallel_mode != "row", '`activation` is only for QKV/FC1, which is column-parallel Linear'
         gelu_out, _, out = outputs
         return out, gelu_out
     out, _, _ = outputs
