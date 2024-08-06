@@ -12,9 +12,10 @@ import paddle.nn.functional as F
 from paddle.nn.initializer import Constant
 from transformer_engine import transformer_engine_paddle as tex
 
-from .base import (
-    TransformerEngineBaseLayer,
+from .base import TransformerEngineBaseLayer
+from .ubgemm import (
     UbGEMM,
+    UbGemmType,
     get_ub,
 )
 from .layernorm_linear import _apply_normalization_fwd, _apply_normalization_bwd
@@ -103,7 +104,7 @@ def _mlp_forward(
             is_first_microbatch,
             ub_overlap_rs=ub_overlap_rs,
             ub_overlap_ag=ub_overlap_ag,
-            ub_name=UbGEMM.fc1_fprop,
+            ub_name=UbGEMM.fc1,
         )
         if activation == "gelu":
             gelu_out = gelu_fp8(
@@ -141,7 +142,7 @@ def _mlp_forward(
             is_first_microbatch,
             ub_overlap_rs=ub_overlap_rs,
             ub_overlap_ag=ub_overlap_ag,
-            ub_name=UbGEMM.fc2_fprop,
+            ub_name=UbGEMM.fc2,
         )
     else:
         fc1_outputs = _linear_fwd_non_fp8(
@@ -161,7 +162,7 @@ def _mlp_forward(
             activation=activation,
             ub_overlap_rs=ub_overlap_rs,
             ub_overlap_ag=ub_overlap_ag,
-            ub_name=UbGEMM.fc1_fprop,
+            ub_name=UbGEMM.fc1,
         )
 
         if activation == "gelu":
@@ -188,7 +189,7 @@ def _mlp_forward(
             tp_group,
             ub_overlap_rs=ub_overlap_rs,
             ub_overlap_ag=ub_overlap_ag,
-            ub_name=UbGEMM.fc2_fprop,
+            ub_name=UbGEMM.fc2,
         )
     return (
         fc1_out,
@@ -593,7 +594,7 @@ class _LayerNormMLP(paddle.autograd.PyLayer):
 
             # For grad_output_preprocess
             if ctx.ub_overlap_ag:
-                ctx.ub_obj_gradout = get_ub(UbGEMM.fc2_dgrad)
+                ctx.ub_obj_gradout = get_ub(UbGEMM.fc2, UbGemmType.dgrad)
                 ub_algo = tex.NVTE_Comm_Overlap_Algo.SPLIT_PIPELINED_AG_P2P
             else:
                 ctx.ub_obj_gradout = ub_algo = None

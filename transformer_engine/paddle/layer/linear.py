@@ -17,7 +17,10 @@ from .base import (
     _2X_ACC_FPROP,
     _2X_ACC_DGRAD,
     _2X_ACC_WGRAD,
+)
+from .ubgemm import (
     UbGEMM,
+    UbGemmType,
     get_ub,
     validate_ub_args,
 )
@@ -169,10 +172,10 @@ def _linear_fwd_non_fp8(
     weight = cast_if_needed_inplace(weight, activation_dtype)
     bias = cast_if_needed_inplace(bias, activation_dtype)
 
-    if ub_overlap_rs and ub_name in (UbGEMM.fc2_fprop, UbGEMM.proj_fprop):
+    if ub_overlap_rs and ub_name.can_row_parallel:
         assert sequence_parallel, "Enable user_buffer means the gemm and all-gather/reduce-scatter are calculated simultaneously; which means to user must enable `sequence_parallel`"
         ub_algo = tex.NVTE_Comm_Overlap_Algo.SPLIT_PIPELINED_RS_P2P
-        ub_obj = get_ub(ub_name)
+        ub_obj = get_ub(ub_name, UbGemmType.fprop)
         out = ub_obj.get_ubuf_output(tex.NVTE_Comm_Overlap_Type.AG)
         rs_out = paddle.empty((
                 inputmat_total.shape[0] // tp_world_size,
@@ -213,7 +216,7 @@ def _linear_fwd_non_fp8(
         return out, gelu_out
     out, _, _ = outputs
     # Row Parallel Linear
-    if ub_overlap_rs:
+    if ub_overlap_rs and ub_name.can_row_parallel:
         out = rs_out
     elif parallel_mode == "row" and sequence_parallel:
         out, _ = reduce_scatter(out, tp_group)
@@ -690,8 +693,8 @@ class _Linear(paddle.autograd.PyLayer):
                 fwd_scale_inverses,
             ) = saved_tensor_allow_none(ctx)
 
-            if ctx.ub_overlap_ag and ctx.ub_name in (UbGEMM.fc2_fprop, UbGEMM.proj_fprop): #Only allows overlap AG for row-parllel-linear in bwd.
-                ctx.ub_obj_gradout = get_ub(ctx.ub_name.get_dgrad())
+            if ctx.ub_overlap_ag and ctx.ub_name.can_row_parallel: #Only allows overlap AG for the row-parallel-linear (e.g. fc2/proj) in their backward
+                ctx.ub_obj_gradout = get_ub(ctx.ub_name, UbGemmType.dgrad)
                 ub_algo = tex.NVTE_Comm_Overlap_Algo.SPLIT_PIPELINED_AG_P2P
             else:
                 ctx.ub_obj_gradout = ub_algo = None

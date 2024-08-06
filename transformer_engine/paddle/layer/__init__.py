@@ -10,4 +10,4 @@ from .layernorm_mlp import LayerNormMLP
 from .linear import Linear
 from .softmax import FusedScaleMaskSoftmax
 from .transformer import TransformerLayer
-from .base import initialize_ub, destroy_ub, UbGEMM
+from .ubgemm import initialize_ub, destroy_ub, UbGEMM

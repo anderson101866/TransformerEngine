@@ -47,7 +47,7 @@ class TestLinearUbOverlapRS(_TestLinearTpBase):
                 sequence_parallel=self.sequence_parallel,
                 ub_overlap_rs = True,
                 ub_overlap_ag = True,
-                ub_name=te.UbGEMM.fc2_fprop,
+                ub_name=te.UbGEMM.fc2,
             )
 
             layer_pd = self._create_pd_linear(layer_te, axis=1)
