@@ -71,7 +71,11 @@ class _TestLinearTpBase(unittest.TestCase):
         return loss, grad_input
 
     def _create_pd_linear(self, layer_te: te.Linear, axis: int=0):
-        """Create a normal Paddle nn.Linear with weight=[in_features, out_features] for comparing result"""
+        """
+        Create a normal Paddle nn.Linear with weight=[in_features, out_features] for comparing result
+        Args:
+            axis: 0 for column-parallel; 1 for row-parallel
+        """
         layer_pd = te.Linear(
             self.in_features,
             self.out_features,
