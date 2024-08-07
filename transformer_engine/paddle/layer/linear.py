@@ -4,7 +4,7 @@
 """Linear API"""
 
 import warnings
-from typing import Union, Tuple, Dict, Any, Optional
+from typing import Union, Tuple, Dict, Any, Optional, Literal
 
 import paddle
 import paddle.nn.functional as F
@@ -822,7 +822,7 @@ class Linear(TransformerEngineBaseLayer):
         backend: str = "transformer_engine",
         ub_overlap_rs: bool = False,
         ub_overlap_ag: bool = False,
-        ub_name: Optional[UbGEMM] = None,
+        ub_name: Literal['qkv', 'proj', 'fc1', 'fc2', None] = None,
     ) -> None:
         super().__init__()
         self.in_features = in_features
@@ -901,7 +901,7 @@ class Linear(TransformerEngineBaseLayer):
         ub_name = validate_ub_args(self.parallel_mode, self.backend, ub_overlap_rs, ub_overlap_ag, ub_name)
         self.ub_overlap_rs = ub_overlap_rs
         self.ub_overlap_ag = ub_overlap_ag
-        self.ub_name = ub_name
+        self.ub_name: UbGEMM = ub_name
 
     def _te_forward(
         self,

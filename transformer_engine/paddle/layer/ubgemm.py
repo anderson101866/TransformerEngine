@@ -35,6 +35,14 @@ class UbGEMM(Enum):
         """Return if this GEMM supports row-parallel"""
         return self in (UbGEMM.fc2, UbGEMM.proj)
 
+    @staticmethod
+    def parse(ub_name: str) -> 'UbGEMM':
+        """Parse the user given string into `UbGEMM` for TE implementation. Raise ValueError if parsing fail"""
+        try:
+            return UbGEMM[ub_name]
+        except KeyError:
+            raise ValueError(f"Invalid ub_name:'{ub_name}'. Must be one of: {', '.join(UbGEMM.__members__.keys())}") # pylint: disable=raise-missing-from
+
 class UbGemmType(Enum):
     """Different kinds of `UbGEMM` in a transformer layer, which is used to generate a combinations of any (`UbGemm`, `UbGemmType`) pairs"""
     fprop = auto()
@@ -217,7 +225,7 @@ class _UBufGemmManager: #pylint: disable=too-few-public-methods
                     is_reduce_scatter,  # Overlapped collective is reduce-scatter
                 )
 
-def validate_ub_args(parallel_mode: Literal["row", "column", None], backend: str, ub_overlap_rs: bool, ub_overlap_ag: bool, ub_name: Optional[UbGEMM]) -> Optional[UbGEMM]:
+def validate_ub_args(parallel_mode: Literal["row", "column", None], backend: str, ub_overlap_rs: bool, ub_overlap_ag: bool, ub_name: Optional[str]) -> Optional[UbGEMM]:
     """A helper function to reject meaningless argument for nn.Layer like `te.Linear`, `te.LayerNormLinear`"""
     if backend == "paddle" and (ub_overlap_rs or ub_overlap_ag or ub_name):
         warnings.warn(
@@ -225,10 +233,11 @@ def validate_ub_args(parallel_mode: Literal["row", "column", None], backend: str
         )
     if ub_overlap_rs or ub_overlap_ag:
         assert ub_name is not None, "Userbuffer name (`ub_name`) is not set."
+        ub_name: UbGEMM = UbGEMM.parse(ub_name)
         if parallel_mode == "row":
-            assert ub_name.can_row_parallel, f"The given ub_name:`{ub_name}` doesn't support row-parallel linear"
+            assert ub_name.can_row_parallel, f"The given ub_name:`{ub_name.name}` doesn't support row-parallel linear"
         elif parallel_mode == "column":
-            assert ub_name.can_column_parallel, f"The given ub_name:`{ub_name}` doesn't support column-parallel linear"
+            assert ub_name.can_column_parallel, f"The given ub_name:`{ub_name.name}` doesn't support column-parallel linear"
     elif ub_name is not None:
         warnings.warn("Please set `ub_overlap_rs` or `ub_overlap_ag` to enable userbuffer overlapping (tp-comm-overlap), or `ub_name` argument is ignored.")
         ub_name = None
