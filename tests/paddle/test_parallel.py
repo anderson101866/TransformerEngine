@@ -24,13 +24,10 @@ class TestParallelLinear(TestDistributed):
         """Tests linear with tensor parallel in BF16"""
         self.run_2gpu(str(test_root / "parallel_tests" / "linear_tp.py"))
 
-class TestParallelLinearTpCommOverlap(TestDistributed):
-    """For supported nn layers, test tp-comm-overlap feature with tensor parallel+sequence parallel in BF16"""
-    @unittest.skipIf(not is_devices_enough(2), "TestTpCommOverlap needs at least 2 GPUs")
+    @unittest.skipIf(not is_devices_enough(2), "TestParallelLinear needs at least 2 GPUs")
     def test_linear_tp_comm_overlap(self):
         """Tests GEMM+AG/GEMM+RS on te.Linear"""
         self.run_2gpu(str(test_root / "parallel_tests" / "linear_tp_comm_overlap.py"))
-
 
 class TestParallelLayerNormLinear(TestDistributed):
     """Test LayerNormLinear in Parallel mode"""
@@ -50,9 +47,6 @@ class TestParallelLayerNormMLP(TestDistributed):
     def test_layernorm_mlp_tp(self):
         """Tests layernorm_mlp with tensor parallel in BF16"""
         self.run_2gpu(str(test_root / "parallel_tests" / "layernorm_mlp_tp.py"))
-
-class TestParallelLayerNormMLPTpCommOverlap(TestDistributed):
-    """For supported nn layers, test tp-comm-overlap feature with tensor parallel+sequence parallel in BF16"""
 
     @unittest.skipIf(not is_devices_enough(2), "TestParallelLayerNormMLP needs 2 GPUs")
     def test_layernorm_mlp_tp_comm_overlap(self):
@@ -95,8 +89,13 @@ class TestParallelAttention(TestDistributed):
     @unittest.skipIf(not is_devices_enough(2), "TestParallelAttention needs 2 GPUs")
     @unittest.skipIf(not gpu_has_fp8, reason)
     def test_attention_tp(self):
-        """Tests TransMultiHeadAttentionformer Layer with tensor parallel in BF16"""
+        """Tests MultiHeadAttention Layer with tensor parallel in BF16"""
         self.run_2gpu(str(test_root / "parallel_tests" / "attention_tp.py"))
+
+    @unittest.skipIf(not is_devices_enough(2), "TestParallelAttention needs 2 GPUs")
+    def test_attention_tp_comm_overlap(self):
+        """Tests te.MultiHeadAttention when gemm is overlapped with AG+RS"""
+        self.run_2gpu(str(test_root / "parallel_tests" / "attention_tp_comm_overlap.py"))
 
 
 class TestParallelTransformerLayer(TestDistributed):

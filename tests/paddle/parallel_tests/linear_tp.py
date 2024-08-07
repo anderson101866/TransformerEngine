@@ -70,7 +70,7 @@ class _TestLinearTpBase(unittest.TestCase):
             grad_input = input_parallel.grad
         return loss, grad_input
 
-    def _create_pd_linear(self, layer_te: te.Linear, axis: int=0):
+    def _create_ref_layer(self, layer_te: te.Linear, axis: int=0):
         """
         Create a normal Paddle nn.Linear with weight=[in_features, out_features] for comparing result
         Args:
@@ -111,7 +111,7 @@ class TestLinearTp(_TestLinearTpBase):
             parallel_mode="column",
             sequence_parallel=self.sequence_parallel,
         )
-        layer_pd = self._create_pd_linear(layer_te, axis=0)
+        layer_pd = self._create_ref_layer(layer_te, axis=0)
 
         assert_shape(
             layer_te.weight, [self.out_features // self.model_parallel_size, self.in_features]
@@ -147,7 +147,7 @@ class TestLinearTp(_TestLinearTpBase):
             parallel_mode="row",
             sequence_parallel=self.sequence_parallel,
         )
-        layer_pd = self._create_pd_linear(layer_te, axis=1)
+        layer_pd = self._create_ref_layer(layer_te, axis=1)
 
         assert_shape(
             layer_te.weight, [self.out_features, self.in_features // self.model_parallel_size]

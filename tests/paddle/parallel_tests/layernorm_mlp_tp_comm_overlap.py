@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 # See LICENSE for license information.
 """Unittest for LayerNormMLP layer in tensor+sequence parallel with UB gemm overlap (tp-comm-overlap)"""
@@ -11,6 +11,8 @@ from paddle.distributed import fleet
 from utils import assert_allclose, assert_shape, set_random_seed
 from parallel_tests.layernorm_mlp_tp import _TestLayerNormMLPTpBase
 import transformer_engine.paddle as te
+
+SEQUENCE_PARALLEL = True
 
 ##############################################################################
 # Unittest for LayerNormMLP layer in tp-comm-overlap,
@@ -28,7 +30,6 @@ class TestLayerNormMLPTpCommOverlap(_TestLayerNormMLPTpBase):
         self.atol = 0.001
         self.eps = 1e-3
         self.fp8 = False
-        self.sequence_parallel = True
 
     def test_parallel_layer(self):
         """Tests parallel LayerNormMLP with tp-comm-overlap enabled"""
@@ -41,11 +42,11 @@ class TestLayerNormMLPTpCommOverlap(_TestLayerNormMLPTpBase):
                 ffn_hidden_size=self.ffn_hidden_size,
                 eps=self.eps,
                 set_parallel_mode=True,
-                sequence_parallel=self.sequence_parallel,
+                sequence_parallel=SEQUENCE_PARALLEL,
                 ub_overlap_rs=True,
                 ub_overlap_ag=True,
             )
-            layer_pd = self._create_pd_layer(layer_te)
+            layer_pd = self._create_ref_layer(layer_te)
 
             assert_shape(
                 layer_te.fc1_weight,
@@ -71,8 +72,8 @@ class TestLayerNormMLPTpCommOverlap(_TestLayerNormMLPTpBase):
                         layer_te,
                         inp,
                         optimizer_te,
-                        split_input="row" if self.sequence_parallel else "none",
-                        gather_output=self.sequence_parallel,
+                        split_input="row" if SEQUENCE_PARALLEL else "none",
+                        gather_output=SEQUENCE_PARALLEL,
                     )
                 loss_ref, grad_input_ref = self._train_one_step(layer_pd, inp, optimizer_pd)
                 assert_allclose(loss_tp, loss_ref, rtol=self.rtol, atol=self.atol)

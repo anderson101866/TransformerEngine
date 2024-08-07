@@ -69,8 +69,8 @@ class _TestLayerNormMLPTpBase(unittest.TestCase):
             grad_input = input_parallel.grad
         return loss, grad_input
 
-    def _create_pd_layer(self, layer_te: te.LayerNormMLP):
-        """Create a LayerNormMLP based on paddle backend with hidden_size, ffn_hidden_size for comparing result"""
+    def _create_ref_layer(self, layer_te: te.LayerNormMLP):
+        """Create a LayerNormMLP based on paddle backend with (hidden_size, ffn_hidden_size) for comparing result"""
         layer_pd = te.LayerNormMLP(
             hidden_size=self.hidden_size,
             ffn_hidden_size=self.ffn_hidden_size,
@@ -115,7 +115,7 @@ class TestLayerNormMLPTp(_TestLayerNormMLPTpBase):
             set_parallel_mode=True,
             sequence_parallel=self.sequence_parallel,
         )
-        layer_pd = self._create_pd_layer(layer_te)
+        layer_pd = self._create_ref_layer(layer_te)
 
         assert_shape(
             layer_te.fc1_weight,

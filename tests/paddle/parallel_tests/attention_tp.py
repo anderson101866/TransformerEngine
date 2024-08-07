@@ -12,10 +12,8 @@ from paddle.distributed.fleet.layers.mpu import mp_ops
 from utils import assert_allclose, set_random_seed, register_sequence_parallel_allreduce_hooks
 import transformer_engine.paddle as te
 
-
-class TestAttentionTp(unittest.TestCase):
-    """Tests MultiHeadAttention layer with model parallel in BF16"""
-
+class _TestAttentionTpBase(unittest.TestCase):
+    """base class for common implementation for derived class"""
     def setUp(self):
         self.set_attr()
         self.init_dist_env()
@@ -37,21 +35,6 @@ class TestAttentionTp(unittest.TestCase):
         self.tp_group = self.hcg.get_model_parallel_group()
         self.world_size = self.hcg.get_model_parallel_world_size()
 
-    def set_attr(self):
-        """Set test configs"""
-        self.batch_size = 16
-        self.hidden_size = 1024
-        self.num_heads = 16
-        self.q_seqlen = 128
-        self.kv_seqlen = 128
-        self.mask_type = "padding"
-        self.global_dtype = "bfloat16"
-        self.rtol = 5e-3
-        self.atol = 5e-3
-        self.eps = 1e-3
-        self.fp8 = False
-        self.sequence_parallel = False
-
     def _train_one_step(self, layer, inp_list, optimizer, fp8_enabled, sequence_parallel=False):
         inp, mask = inp_list
         if sequence_parallel:
@@ -72,28 +55,11 @@ class TestAttentionTp(unittest.TestCase):
         optimizer.clear_grad()
         return loss, total_out
 
-    def test_parallel_layer(self):
-        """Tests parallel Transformer"""
-        set_random_seed(1024)
-        common_args = (
-            self.hidden_size,
-            self.num_heads,
-        )
-        common_kwargs = {
-            "layernorm_epsilon": self.eps,
-            "attention_dropout": 0.0,
-            "attn_mask_type": self.mask_type,
-            "attention_type": "self",
-            "tp_group": self.tp_group,
-            "input_layernorm": True,
-        }
-
-        layer_tp = te.MultiHeadAttention(
-            *common_args,
-            **common_kwargs,
-            set_parallel_mode=True,
-            sequence_parallel=self.sequence_parallel,
-        )
+    def _create_ref_layer(self, layer_tp: te.MultiHeadAttention, common_args, common_kwargs):
+        """
+        Create a MultiHeadAttention disabling column,row parallel to compare test result.
+        As a reference layer, it copies all weights from `layer_tp`
+        """
         layer_single = te.MultiHeadAttention(*common_args, **common_kwargs, set_parallel_mode=False)
 
         def _get_total_weight(local_weight, tp_group, axis, interleave=False):
@@ -144,6 +110,49 @@ class TestAttentionTp(unittest.TestCase):
         copy_weight(layer_tp, layer_single, None, ["layernorm_qkv", "ln_weight"])
         copy_weight(layer_tp, layer_single, "column", ["layernorm_qkv", "weight"], interleave=True)
         copy_weight(layer_tp, layer_single, "row", ["proj", "weight"])
+        return layer_single
+
+class TestAttentionTp(_TestAttentionTpBase):
+    """Tests MultiHeadAttention layer with model parallel in BF16"""
+
+    def set_attr(self):
+        """Set test configs"""
+        self.batch_size = 16
+        self.hidden_size = 1024
+        self.num_heads = 16
+        self.q_seqlen = 128
+        self.kv_seqlen = 128
+        self.mask_type = "padding"
+        self.global_dtype = "bfloat16"
+        self.rtol = 5e-3
+        self.atol = 5e-3
+        self.eps = 1e-3
+        self.fp8 = False
+        self.sequence_parallel = False
+
+    def test_parallel_layer(self):
+        """Tests parallel Transformer"""
+        set_random_seed(1024)
+        common_args = (
+            self.hidden_size,
+            self.num_heads,
+        )
+        common_kwargs = {
+            "layernorm_epsilon": self.eps,
+            "attention_dropout": 0.0,
+            "attn_mask_type": self.mask_type,
+            "attention_type": "self",
+            "tp_group": self.tp_group,
+            "input_layernorm": True,
+        }
+
+        layer_tp = te.MultiHeadAttention(
+            *common_args,
+            **common_kwargs,
+            set_parallel_mode=True,
+            sequence_parallel=self.sequence_parallel,
+        )
+        layer_single = self._create_ref_layer(layer_tp, common_args, common_kwargs)
 
         if self.sequence_parallel:
             register_sequence_parallel_allreduce_hooks(layer_tp, accumulation_steps=1)

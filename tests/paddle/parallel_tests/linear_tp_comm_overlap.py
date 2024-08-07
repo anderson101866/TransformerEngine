@@ -14,6 +14,7 @@ import transformer_engine.paddle as te
 
 B = 16
 H = 64
+SEQUENCE_PARALLEL = True
 
 ##############################################################################
 # Unittest for Linear layer in tp-comm-overlap,
@@ -30,7 +31,6 @@ class TestLinearUbOverlapRS(_TestLinearTpBase):
         self.rtol = 0.01
         self.atol = 0.001
         self.fp8 = False
-        self.sequence_parallel = True
 
     def test_fc2_layer(self):
         """Tests fc2(row-parallel linear) overlapping with RS(Reduce scatter)"""
@@ -44,13 +44,13 @@ class TestLinearUbOverlapRS(_TestLinearTpBase):
                 self.in_features,
                 self.out_features,
                 parallel_mode="row",
-                sequence_parallel=self.sequence_parallel,
+                sequence_parallel=SEQUENCE_PARALLEL,
                 ub_overlap_rs = True,
                 ub_overlap_ag = True,
                 ub_name='fc2',
             )
 
-            layer_pd = self._create_pd_linear(layer_te, axis=1)
+            layer_pd = self._create_ref_layer(layer_te, axis=1)
 
             assert_shape(
                 layer_pd.weight, [FFN, H]
@@ -76,7 +76,7 @@ class TestLinearUbOverlapRS(_TestLinearTpBase):
                     inp,
                     optimizer_te,
                     split_input="column",
-                    gather_output=self.sequence_parallel,
+                    gather_output=SEQUENCE_PARALLEL,
                 )
                 assert_allclose(loss_tp, loss_ref, rtol=self.rtol, atol=self.atol)
                 assert_allclose(grad_input, grad_input_ref, rtol=self.rtol, atol=self.atol)
@@ -94,7 +94,6 @@ class TestLinearUbOverlapAG(_TestLinearTpBase):
         self.rtol = 0.01
         self.atol = 0.001
         self.fp8 = False
-        self.sequence_parallel = True
 
     def test_fc1_layer(self):
         """Tests fc1(column-parallel linear) overlapping with AG(allgather)"""
@@ -108,13 +107,13 @@ class TestLinearUbOverlapAG(_TestLinearTpBase):
                 self.in_features,
                 self.out_features,
                 parallel_mode="column",
-                sequence_parallel=self.sequence_parallel,
+                sequence_parallel=SEQUENCE_PARALLEL,
                 ub_overlap_rs = True,
                 ub_overlap_ag = True,
                 ub_name='fc1',
             )
 
-            layer_pd = self._create_pd_linear(layer_te, axis=0)
+            layer_pd = self._create_ref_layer(layer_te, axis=0)
 
             assert_shape(
                 layer_pd.weight, [H, FFN]
@@ -140,7 +139,7 @@ class TestLinearUbOverlapAG(_TestLinearTpBase):
                     inp,
                     optimizer_te,
                     split_input="row",
-                    gather_output=self.sequence_parallel,
+                    gather_output=SEQUENCE_PARALLEL,
                 )
                 assert_allclose(loss_tp, loss_ref, rtol=self.rtol, atol=self.atol)
                 assert_allclose(grad_input, grad_input_ref, rtol=self.rtol, atol=self.atol)

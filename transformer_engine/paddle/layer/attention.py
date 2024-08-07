@@ -772,6 +772,8 @@ class MultiHeadAttention(paddle.nn.Layer):
         fuse_wgrad_accumulation: bool = False,
         rng_state_name: str = "local_seed",
         backend: str = "transformer_engine",
+        ub_overlap_rs: bool = False,
+        ub_overlap_ag: bool = False,
     ) -> None:
         super().__init__()
         self.input_layernorm = input_layernorm
@@ -902,6 +904,9 @@ class MultiHeadAttention(paddle.nn.Layer):
             tp_group=self.tp_group,
             fuse_wgrad_accumulation=fuse_wgrad_accumulation,
             backend=self.backend,
+            ub_overlap_rs=ub_overlap_rs,
+            ub_overlap_ag=ub_overlap_ag,
+            ub_name='proj' if ub_overlap_rs or ub_overlap_ag else None,
         )
 
     def forward(
