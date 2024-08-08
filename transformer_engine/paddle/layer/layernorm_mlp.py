@@ -794,6 +794,8 @@ class LayerNormMLP(TransformerEngineBaseLayer):
         self.return_layernorm_output = return_layernorm_output
         self.zero_centered_gamma = zero_centered_gamma
         self.backend = backend
+        self.ub_overlap_rs = ub_overlap_rs
+        self.ub_overlap_ag = ub_overlap_ag
 
         self._weight_attr = weight_attr
         self._bias_attr = bias_attr
@@ -919,9 +921,6 @@ class LayerNormMLP(TransformerEngineBaseLayer):
         self.fwd_ln_sm_margin = int(os.getenv("NVTE_FWD_LAYERNORM_SM_MARGIN", "0"))
         self.bwd_ln_sm_margin = int(os.getenv("NVTE_BWD_LAYERNORM_SM_MARGIN", "0"))
         self.inf_ln_sm_margin = int(os.getenv("NVTE_INF_LAYERNORM_SM_MARGIN", "0"))
-
-        self.ub_overlap_rs = ub_overlap_rs
-        self.ub_overlap_ag = ub_overlap_ag
 
     def _te_forward(
         self,

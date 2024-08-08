@@ -107,6 +107,11 @@ class TestParallelTransformerLayer(TestDistributed):
         """Tests Transformer Layer with tensor parallel in BF16"""
         self.run_2gpu(str(test_root / "parallel_tests" / "transformer_tp.py"))
 
+    @unittest.skipIf(not is_devices_enough(2), "TestParallelTransformerLayer needs 2 GPUs")
+    def test_transformer_tp_comm_overlap(self):
+        """Tests te.TransformerLayer when gemm is overlapped with AG+RS"""
+        self.run_2gpu(str(test_root / "parallel_tests" / "transformer_tp_comm_overlap.py"))
+
 
 if __name__ == "__main__":
     unittest.main()

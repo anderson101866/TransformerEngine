@@ -851,6 +851,11 @@ class Linear(TransformerEngineBaseLayer):
 
         self.fuse_wgrad_accumulation = fuse_wgrad_accumulation
 
+        ub_name = validate_ub_args(self.parallel_mode, self.backend, ub_overlap_rs, ub_overlap_ag, ub_name)
+        self.ub_overlap_rs = ub_overlap_rs
+        self.ub_overlap_ag = ub_overlap_ag
+        self.ub_name: UbGEMM = ub_name
+
         # Initialize weight parameter
         with track_rng_state(enable=self.tensor_parallel):
             # TE linear weight is in column major
@@ -897,11 +902,6 @@ class Linear(TransformerEngineBaseLayer):
             self.gemm_bias_fused_add = False
         else:
             self.gemm_bias_fused_add = True
-
-        ub_name = validate_ub_args(self.parallel_mode, self.backend, ub_overlap_rs, ub_overlap_ag, ub_name)
-        self.ub_overlap_rs = ub_overlap_rs
-        self.ub_overlap_ag = ub_overlap_ag
-        self.ub_name: UbGEMM = ub_name
 
     def _te_forward(
         self,

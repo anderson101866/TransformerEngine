@@ -139,10 +139,16 @@ class TransformerLayer(paddle.nn.Layer):
         attention_dropout_rng_state_name: str = "local_seed",
         hidden_dropout_rng_state_name: str = "global_seed",
         backend: str = "transformer_engine",
+        ub_tp_comm_overlap: bool = False,
+        ub_overlap_ag: bool = True,
+        ub_overlap_rs: bool = True,
     ) -> None:
         super().__init__()
 
         params_dtype = paddle.get_default_dtype() if params_dtype is None else params_dtype
+        ub_overlap_ag = ub_tp_comm_overlap and ub_overlap_ag
+        ub_overlap_rs = ub_tp_comm_overlap and ub_overlap_rs
+
         self.output_layernorm = output_layernorm
         self.layer_type = layer_type
         self.apply_residual_connection_post_layernorm = apply_residual_connection_post_layernorm
@@ -188,6 +194,8 @@ class TransformerLayer(paddle.nn.Layer):
             "fuse_wgrad_accumulation": fuse_wgrad_accumulation,
             "rng_state_name": attention_dropout_rng_state_name,
             "backend": backend,
+            "ub_overlap_ag": ub_overlap_ag,
+            "ub_overlap_rs": ub_overlap_rs,
         }
 
         self.self_attention = MultiHeadAttention(
@@ -222,6 +230,8 @@ class TransformerLayer(paddle.nn.Layer):
             tp_group=tp_group,
             fuse_wgrad_accumulation=fuse_wgrad_accumulation,
             backend=backend,
+            ub_overlap_rs=ub_overlap_rs,
+            ub_overlap_ag=ub_overlap_ag,
         )
 
         self.hidden_dropout = hidden_dropout
