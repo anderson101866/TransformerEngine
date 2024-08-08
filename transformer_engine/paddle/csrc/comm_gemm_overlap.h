@@ -4,17 +4,18 @@
  * See LICENSE for license information.
  ************************************************************************/
 #pragma once
-
 #include "use_exp_optional.h"
 
-#include <functional>
-#include <vector>
-#include <tuple>
 #include <pybind11/functional.h>
 
-#include "paddle/extension.h"
-#include <transformer_engine/comm_gemm_overlap.h>
- 
+#include <functional>
+#include <tuple>
+#include <vector>
+
+#include "paddle/phi/api/include/tensor.h"
+
+#include "transformer_engine/comm_gemm_overlap.h"
+
 namespace transformer_engine {
 namespace paddle_ext {
 namespace comm_gemm_overlap {

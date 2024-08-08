@@ -3,12 +3,13 @@
  *
  * See LICENSE for license information.
  ************************************************************************/
-#include "use_exp_optional.h"
+#include "use_exp_optional.h" //Remove it after migrating to C++17
+
+#include <memory>
 
 #include "common.h"
 #include "common/util/pybind_helper.h"
 #include "comm_gemm_overlap.h"
-#include <memory>
 
 namespace transformer_engine {
 namespace paddle_ext {

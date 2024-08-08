@@ -5,16 +5,18 @@
  ************************************************************************/
 #include "comm_gemm_overlap.h"
 
-#include <tuple>
-#include <unordered_map>
+#include <cuda_fp8.h>
 
-#include "common.h"
-#include "common/util/logging.h"
-#include "common/util/system.h"
+#include <tuple>
+
 #include "paddle/phi/api/include/tensor_utils.h"
 #include "paddle/phi/common/data_type.h"
 #include "paddle/phi/common/place.h"
+
+#include "common.h"
+#include "common/util/logging.h"
 #include "transformer_engine/transformer_engine.h"
+
 namespace transformer_engine {
 namespace paddle_ext {
 
@@ -269,7 +271,7 @@ void CommGemmOverlapP2P::copy_input_to_ubuf(const paddle::Tensor &input, bool ch
 }
 
 paddle::Tensor CommGemmOverlapP2P::get_ubuf_output(NVTE_Comm_Overlap_Type comm_type) {
-  byte *ubuf_wt_ptr = reinterpret_cast<byte *>(_ubuf.data());
+  uint8_t *ubuf_wt_ptr = reinterpret_cast<uint8_t*>(_ubuf.data());
   int output_c_dim0 = _ubuf.shape()[0];
   if (comm_type == NVTE_Comm_Overlap_Type::REDUCE_SCATTER) {
     ubuf_wt_ptr += (_ubuf.numel() * get_element_size(_ubuf) / _tp_size) * _self_chunk_id;
