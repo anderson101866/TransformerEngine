@@ -89,10 +89,15 @@ class _UBufGemmManager: #pylint: disable=too-few-public-methods
                 + "CUDA Multicast. Launch app with UB_SKIPMC=1 to try CUDA IPC instead."
             )
 
-        assert paddle.distributed.is_initialized()
+        assert paddle.distributed.is_initialized(), 'Have you run with "python -m paddle.distributed.launch"?'
         world_group = paddle.distributed.new_group(backend="nccl")
         world_rank = paddle.distributed.get_rank(world_group)
         world_size = get_distributed_world_size(world_group)
+
+        assert shape[0] % tp_size == 0, (
+            f"Given shape [SxB, H]={shape}, SxB({shape[0]}) can't be divided "
+            f"exactly by sequence parallelism {tp_size}"
+        )
 
         # Construct an intra-node communicator -- this should include ALL ranks in the node
         # NOTE: This may be different than the tensor-parallel group (e.g. two TP groups in a node),
