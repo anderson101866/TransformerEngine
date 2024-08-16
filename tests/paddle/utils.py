@@ -219,3 +219,10 @@ def register_sequence_parallel_allreduce_hooks(model, accumulation_steps) -> Non
     for p in params:
         hook = create_allreduce_gradient_hook(p, accumulation_steps)
         p._register_backward_hook(hook)
+
+def is_multicast_supported():
+    """
+    Check if cuda driver supports multicast feature
+    see also: CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED
+    """
+    return tex.device_supports_multicast()
