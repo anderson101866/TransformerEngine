@@ -150,7 +150,7 @@ def _linear_fwd_non_fp8(
     tp_group: Union[dist_group_type, None],
     activation: str = "",
     ub_overlap_rs: bool = False,
-    ub_overlap_ag: bool = False, #TODO(anderson): apply tp-comm-overlap for Linear+AG # pylint: disable=unused-argument
+    ub_overlap_ag: bool = False,
     ub_name: Optional[UbGEMM] = None,
 ):
     """Non-FP8 path of Linear Fwd"""
@@ -159,8 +159,32 @@ def _linear_fwd_non_fp8(
     if tp_world_size == 1:
         ub_overlap_ag = ub_overlap_rs = False
 
+    # decide to apply overlap of: (1) AG + column-parallel-linear OR (2)row-parallel-linear + RS
+    if ub_overlap_ag and ub_name.can_column_parallel:
+        assert (
+            sequence_parallel
+        ), "Enable user_buffer means all-gather and gemm runs simultaneously; which means to user must enable `sequence_parallel`"
+        ub_algo = tex.NVTE_Comm_Overlap_Algo.SPLIT_PIPELINED_AG_P2P
+        ub_obj = get_ub(ub_name, UbGemmType.fprop)
+        out = None
+    elif ub_overlap_rs and ub_name.can_row_parallel:
+        assert (
+            sequence_parallel
+        ), "Enable user_buffer means gemm and reduce-scatter runs simultaneously; which means to user must enable `sequence_parallel`"
+        ub_algo = tex.NVTE_Comm_Overlap_Algo.SPLIT_PIPELINED_RS_P2P
+        ub_obj = get_ub(ub_name, UbGemmType.fprop)
+        out = ub_obj.get_ubuf_output(tex.NVTE_Comm_Overlap_Type.AG)
+    else:  # w/o tp-comm-overlap
+        ub_algo = ub_obj = None
+        out = None
+
     # Column Parallel Linear
-    if parallel_mode == "column" and sequence_parallel:
+    if ub_overlap_ag and ub_name.can_column_parallel:
+        ub_obj.copy_input_to_ubuf(inputmat, True)  # copy local inputmat to ubuf
+        inputmat_total = ub_obj.get_ubuf_output(
+            tex.NVTE_Comm_Overlap_Type.AG
+        )  # the underlying buffer of `inputmat_total` will be set to *gathered* inputmat during GEMM
+    elif parallel_mode == "column" and sequence_parallel:
         inputmat_total, _ = allgather(inputmat, tp_group)
     else:
         inputmat_total = inputmat
@@ -173,17 +197,12 @@ def _linear_fwd_non_fp8(
     bias = cast_if_needed_inplace(bias, activation_dtype)
 
     if ub_overlap_rs and ub_name.can_row_parallel:
-        assert sequence_parallel, "Enable user_buffer means the gemm and all-gather/reduce-scatter are calculated simultaneously; which means to user must enable `sequence_parallel`"
-        ub_algo = tex.NVTE_Comm_Overlap_Algo.SPLIT_PIPELINED_RS_P2P
-        ub_obj = get_ub(ub_name, UbGemmType.fprop)
-        out = ub_obj.get_ubuf_output(tex.NVTE_Comm_Overlap_Type.AG)
-        rs_out = paddle.empty((
-                inputmat_total.shape[0] // tp_world_size,
-                weight.shape[0] #out_feature
-            ), dtype=activation_dtype)
-    else: #w/o tp-comm-overlap
-        ub_algo = ub_obj = None
-        out = rs_out = None
+        rs_out = paddle.empty(
+            (inputmat_total.shape[0] // tp_world_size, weight.shape[0]),  # out_feature
+            dtype=activation_dtype,
+        )
+    else:  # w/o tp-comm-overlap  OR in column-parallel-linear, the `extra_output_tensor` argument is not used.
+        rs_out = None
 
     outputs = gemm(
         weight,
@@ -211,7 +230,9 @@ def _linear_fwd_non_fp8(
         fp8_meta["update_amax_and_scale_fwd"] = True
 
     if activation == "gelu":
-        assert parallel_mode != "row", '`activation` is only for QKV/FC1, which is column-parallel Linear'
+        assert (
+            parallel_mode != "row"
+        ), "`activation` is only for QKV/FC1, which is column-parallel Linear"
         gelu_out, _, out = outputs
         return out, gelu_out
     out, _, _ = outputs
