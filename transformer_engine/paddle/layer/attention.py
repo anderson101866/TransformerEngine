@@ -826,6 +826,8 @@ class MultiHeadAttention(paddle.nn.Layer):
                     tp_group=self.tp_group,
                     fuse_wgrad_accumulation=fuse_wgrad_accumulation,
                     backend=self.backend,
+                    ub_overlap_ag=ub_overlap_ag,
+                    ub_name='qkv'
                 )
             else:
                 self.qkv = Linear(
@@ -838,6 +840,8 @@ class MultiHeadAttention(paddle.nn.Layer):
                     tp_group=self.tp_group,
                     fuse_wgrad_accumulation=fuse_wgrad_accumulation,
                     backend=self.backend,
+                    ub_overlap_ag=ub_overlap_ag,
+                    ub_name='qkv'
                 )
 
         else:  # cross attention
