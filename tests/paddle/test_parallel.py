@@ -46,6 +46,18 @@ class TestParallelLayerNormLinear(TestDistributed):
         """Tests layernorm_linear with tensor parallel in BF16"""
         self.run_2gpu(str(test_root / "parallel_tests" / "layernorm_linear_tp.py"))
 
+    @unittest.skipIf(not is_devices_enough(2), "TestParallelLayerNormLinear needs 2 GPUs")
+    @mock.patch.dict(os.environ, {"UB_SKIPMC": "1"})
+    def test_layernorm_linear_tp_comm_overlap_ipc(self):
+        """Tests te.LayerNormLinear when gemm is overlapped with AG in BF16"""
+        self.run_2gpu(str(test_root / "parallel_tests" / "layernorm_linear_tp_comm_overlap.py"))
+    @unittest.skipIf(not is_devices_enough(2), "TestParallelLayerNormLinear needs 2 GPUs")
+    @unittest.skipUnless(gpu_has_multicast, "No multicast supported")
+    def test_layernorm_linear_tp_comm_overlap(self):
+        """Tests te.LayerNormLinear when gemm is overlapped with AG in BF16"""
+        self.run_2gpu(str(test_root / "parallel_tests" / "layernorm_linear_tp_comm_overlap.py"))
+
+
 
 class TestParallelLayerNormMLP(TestDistributed):
     """Test LayerNormMLP in Parallel mode"""

@@ -12,10 +12,8 @@ from paddle.distributed.fleet.layers.mpu import mp_ops
 from utils import assert_allclose, assert_shape, set_random_seed
 import transformer_engine.paddle as te
 
-
-class TestLayerNormLinearTp(unittest.TestCase):
-    """Tests LayerNormLinear layer with column/row parallelism in BF16"""
-
+class _TestLayerNormLinearTpBase(unittest.TestCase):
+    """base class for common implementation for derived class"""
     def setUp(self):
         self.set_attr()
         self.init_dist_env()
@@ -37,17 +35,6 @@ class TestLayerNormLinearTp(unittest.TestCase):
         self.tp_group = self.hcg.get_model_parallel_group()
         self.world_size = self.hcg.get_model_parallel_world_size()
 
-    def set_attr(self):
-        """Set test configs"""
-        self.batch_size = 16
-        self.in_features = 32
-        self.out_features = 64
-        self.global_dtype = "bfloat16"
-        self.rtol = 1e-3
-        self.atol = 1e-3
-        self.eps = 1e-3
-        self.fp8 = False
-        self.sequence_parallel = False
 
     def _train_one_step(self, layer, inp, optimizer, split_input="none", gather_output=False):
         inp = paddle.to_tensor(inp, stop_gradient=True)
@@ -81,16 +68,7 @@ class TestLayerNormLinearTp(unittest.TestCase):
             grad_input = input_parallel.grad
         return loss, grad_input
 
-    def test_column_parallel_layer(self):
-        """Tests column parallel LayerNormLinear"""
-        set_random_seed(1024)
-        layer_te = te.LayerNormLinear(
-            self.in_features,
-            self.out_features,
-            eps=self.eps,
-            parallel_mode="column",
-            sequence_parallel=self.sequence_parallel,
-        )
+    def _create_ref_layer(self, layer_te: te.LayerNormLinear):
         layer_pd = te.LayerNormLinear(
             self.in_features,
             self.out_features,
@@ -103,6 +81,34 @@ class TestLayerNormLinearTp(unittest.TestCase):
         paddle.distributed.all_gather(total_weight, partial_weight, group=self.tp_group)
         total_weight = paddle.concat(total_weight, axis=0)
         layer_pd.weight.copy_(total_weight.T, True)
+        return layer_pd
+
+class TestLayerNormLinearTp(_TestLayerNormLinearTpBase):
+    """Tests LayerNormLinear layer with column parallelism in BF16"""
+
+    def set_attr(self):
+        """Set test configs"""
+        self.batch_size = 16
+        self.in_features = 32
+        self.out_features = 64
+        self.global_dtype = "bfloat16"
+        self.rtol = 1e-3
+        self.atol = 1e-3
+        self.eps = 1e-3
+        self.fp8 = False
+        self.sequence_parallel = False
+
+    def test_column_parallel_layer(self):
+        """Tests column parallel LayerNormLinear"""
+        set_random_seed(1024)
+        layer_te = te.LayerNormLinear(
+            self.in_features,
+            self.out_features,
+            eps=self.eps,
+            parallel_mode="column",
+            sequence_parallel=self.sequence_parallel,
+        )
+        layer_pd = self._create_ref_layer(layer_te)
 
         assert_shape(
             layer_te.weight, [self.out_features // self.model_parallel_size, self.in_features]
@@ -131,7 +137,7 @@ class TestLayerNormLinearTp(unittest.TestCase):
 
 
 class TestLayerNormLinearTpFp8(TestLayerNormLinearTp):
-    """Tests LayernormLinear layer with column/row parallelism in FP8"""
+    """Tests LayernormLinear layer with column parallelism in FP8"""
 
     def set_attr(self):
         """Set test configs"""

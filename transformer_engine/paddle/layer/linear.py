@@ -872,7 +872,9 @@ class Linear(TransformerEngineBaseLayer):
 
         self.fuse_wgrad_accumulation = fuse_wgrad_accumulation
 
-        ub_name = validate_ub_args(self.parallel_mode, self.backend, ub_overlap_rs, ub_overlap_ag, ub_name)
+        ub_name = validate_ub_args(
+            self.parallel_mode, self.backend, ub_overlap_rs, ub_overlap_ag, ub_name
+        )
         self.ub_overlap_rs = ub_overlap_rs
         self.ub_overlap_ag = ub_overlap_ag
         self.ub_name: UbGEMM = ub_name

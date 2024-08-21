@@ -5,7 +5,7 @@
 
 import warnings
 import os
-from typing import Union, Tuple, Dict, Any, Optional
+from typing import Union, Tuple, Dict, Any, Optional, Literal
 
 import paddle
 import paddle.nn.functional as F
@@ -24,6 +24,10 @@ from ..cpp_extensions import (
 
 from .base import TransformerEngineBaseLayer
 from .linear import _linear_fwd, _linear_bwd
+from .ubgemm import (
+    UbGEMM,
+    validate_ub_args,
+)
 from ..constants import TE_DType, FP8FwdTensors, FP8BwdTensors, GemmParallelModes, dist_group_type
 from ..distributed import (
     allreduce,
@@ -204,6 +208,8 @@ class _LayerNormLinear(paddle.autograd.PyLayer):
         tp_size: int,
         fuse_wgrad_accumulation: bool,
         is_first_microbatch: bool,
+        ub_overlap_ag: bool,
+        ub_name: UbGEMM,
     ) -> Union[Tuple[paddle.Tensor, ...], paddle.Tensor]:
         if normalization == "RMSNorm":
             assert ln_bias is None, "RMSNorm does not support bias!"
@@ -258,6 +264,9 @@ class _LayerNormLinear(paddle.autograd.PyLayer):
             tp_group,
             is_grad_enabled,
             is_first_microbatch,
+            False,
+            ub_overlap_ag,
+            ub_name,
         )
 
         if is_grad_enabled:
@@ -487,6 +496,8 @@ class LayerNormLinear(TransformerEngineBaseLayer):
         tp_group: Union[dist_group_type, None] = None,
         fuse_wgrad_accumulation: bool = False,
         backend: str = "transformer_engine",
+        ub_overlap_ag: bool = False,
+        ub_name: Literal['qkv', 'fc1', None] = None,
     ) -> None:
         super().__init__()
 
@@ -521,6 +532,16 @@ class LayerNormLinear(TransformerEngineBaseLayer):
         self.sequence_parallel = self.tensor_parallel and sequence_parallel
 
         self.fuse_wgrad_accumulation = fuse_wgrad_accumulation
+
+        ub_name = validate_ub_args(
+            self.parallel_mode, self.backend, False, ub_overlap_ag, ub_name
+        )
+        self.ub_overlap_ag = ub_overlap_ag
+        self.ub_name: UbGEMM = ub_name
+        if self.ub_name and not self.ub_name.can_column_parallel:
+            raise NotImplementedError(
+                "Currently, LayerNormLinear only support tp_comm_overlap with column-parallel-linear. Please specify ub_name='qkv' or 'fc1', and specify parallel_mode='column'"
+            )  # No practical case to use tp_comm_overlap with LayerNormLinear in row-parallel mode. Hence, leave it not implemented
 
         # LayerNorm weights
         self.ln_weight = self.create_parameter(
@@ -645,6 +666,8 @@ class LayerNormLinear(TransformerEngineBaseLayer):
                 self.tp_size,
                 self.fuse_wgrad_accumulation,
                 is_first_microbatch,
+                self.ub_overlap_ag,
+                self.ub_name,
             )
 
         if self.return_layernorm_output:
