@@ -196,18 +196,12 @@ class _UBufGemmManager: #pylint: disable=too-few-public-methods
             dtype in {paddle.bfloat16, paddle.float16, paddle.float32, paddle.int32}, \
             "Currently, userbuffer comm-overlap doesn't support fp8"
         #P2P preferred options
+        num_sm = 1
         cga_size = 1
         use_ce = True
         for ub_gemm in UbGEMM:
             for gemm_type in UbGemmType:
                 sample_buffer = paddle.empty(shape, dtype=paddle.uint8 if use_fp8 and not is_reduce_scatter else dtype)
-                # Adjust SMs reserved for communication in MultiheadAttention
-                if ub_gemm == UbGEMM.qkv:
-                    num_sm = 8
-                elif ub_gemm == UbGEMM.proj:
-                    num_sm = 24
-                else:
-                    num_sm = 4
                 is_reduce_scatter = (gemm_type == UbGemmType.fprop and ub_gemm.can_row_parallel) or \
                                     (gemm_type == UbGemmType.dgrad and ub_gemm.can_column_parallel)
                 set_sm_margin = is_reduce_scatter
