@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2022-2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  *
  * See LICENSE for license information.
  ************************************************************************/
@@ -152,6 +152,11 @@ CommGemmOverlapP2P::CommGemmOverlapP2P(
   }
 }
 
+/*
+** Split AllGather + Pipelined GEMM using P2P communication
+** This function assumes the input_b is pre-copied to _ubufs[rank_id]. This is needed to have AG
+** outputs in each rank to be in the contiguous memory space after all ring exchange phases.
+*/
 void CommGemmOverlapP2P::split_overlap_ag(
   const paddle::Tensor &A, const optional_tensor_ref A_scale_inverse,
   const paddle::Tensor &B, const optional_tensor_ref B_scale_inverse,

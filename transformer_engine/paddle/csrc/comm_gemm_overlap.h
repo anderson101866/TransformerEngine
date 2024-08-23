@@ -20,11 +20,11 @@ namespace transformer_engine {
 namespace paddle_ext {
 namespace comm_gemm_overlap {
 
-//Use std::optonal<Tensor> instead of paddle::optional<Tensor>& because paddle::optional doesn't implement `emplace`, so it can't bind as pybind's C API
+//Use std::optional<Tensor>& instead of paddle::optional<Tensor>& because paddle::optional doesn't implement `emplace`, so it can't bind as pybind's C API
 #ifndef EXP_OPTIONAL_OF_TENSOR
-  using optional_tensor_ref = std::optional<paddle::Tensor>;
+  using optional_tensor_ref = std::optional<paddle::Tensor>&;
 #else
-  using optional_tensor_ref = std::experimental::optional<paddle::Tensor>;
+  using optional_tensor_ref = std::experimental::optional<paddle::Tensor>&;
 #endif
 
 /**
