@@ -103,7 +103,7 @@ class _UBufGemmManager: #pylint: disable=too-few-public-methods
         # NOTE: This may be different than the tensor-parallel group (e.g. two TP groups in a node),
         #       in which case the local_size we get below will not be equal to the tp_size given
         #       by the user. Userbuffers internally accounts for this.
-        hostnames = [None for _ in range(world_size)]
+        hostnames = []
         hostname = socket.gethostname()
         paddle.distributed.all_gather_object(hostnames, hostname)
         intra_node_ranks = []
