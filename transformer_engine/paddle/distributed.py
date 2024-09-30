@@ -6,13 +6,14 @@
 import os
 import warnings
 from contextlib import contextmanager
-from typing import Any, Optional, Union, Tuple
+from typing import Any, Optional, Union, Tuple, List
 
 import paddle
 
 import paddle.distributed.fleet.base.topology as tp
 from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 from paddle.distributed.fleet.layers.mpu import mp_ops
+from paddle.distributed import new_group, get_rank
 
 try:
     # This feature is not supported as of Paddle 2.6.
@@ -215,3 +216,69 @@ def mark_as_sequence_parallel_parameter(parameter: paddle.Tensor):
     hooks in PaddleNLP sequence parallel training.
     """
     setattr(parameter, "sequence_parallel", True)
+
+def new_subgroups_by_enumeration( #reference to the implementation of PyTorch because Paddle 2.6.1 have no such API
+                                  # see also: https://github.com/pytorch/pytorch/blob/d6d9183456cd07ca0b361a194b98c2fb196e7c36/torch/distributed/distributed_c10d.py#L4841
+    ranks_per_subgroup_list: List[List[int]],
+    timeout=None,
+    backend=None,
+) -> Tuple['Group', List['Group']]:
+    """
+    Create subgroups by dividing the global world.
+
+    The division is specified by a nested list of ranks. The subgroups cannot have
+    overlap, and some ranks may not have to be in any subgroup.
+
+    This is a convenience API that calls ``new_group`` to generate multiple subgroups.
+    It requires that all processes in the main group (i.e. all
+    processes that are part of the distributed job) enter this function, even
+    if they are not going to be members of the group.
+
+    .. warning::
+        See warning `Safe concurrent usage` for `new_group` API for important details about
+        using multiple process groups concurrently in a safe manner.
+
+    Args:
+        ranks_per_subgroup_list (list[list[int]]): A nested list of ranks of
+            group members.
+        timeout (datetime.timedelta, optional): see `new_group` for details and default value.
+
+    Returns:
+        The subgroup containing the current rank, and all the subgroups used for cleanup.
+
+    Examples:
+        >>> # Create two subgroups, where each has 2 processes.
+        >>> cur_subgroup, subgroups = new_subgroups_by_enumeration([[0, 2], [1, 3]])
+        >>> rank = dist.get_rank()
+        >>> tensor = paddle.ones(1).cuda() * rank
+        >>> dist.all_reduce(tensor, group=cur_subgroup)
+        >>> tensor
+        tensor([2])     # Subgroup 0: ranks 0 and 2
+        tensor([4])     # Subgroup 1: ranks 1 and 3
+    """
+    if ranks_per_subgroup_list is None or len(ranks_per_subgroup_list) == 0:
+        raise ValueError("The arg 'ranks_per_subgroup_list' cannot be empty")
+
+    subgroups = []
+    cur_subgroup = None
+    # Create a mapping from rank to subgroup to check if there is any subgroup overlap.
+    rank_to_ranks_dict = {}  # type: ignore[var-annotated]
+    for ranks in ranks_per_subgroup_list:
+        subgroup = new_group(
+            ranks=ranks,
+            timeout=timeout,
+            backend=backend,
+        )
+        subgroups.append(subgroup)
+        my_rank = get_rank()
+        for rank in ranks:
+            if rank in rank_to_ranks_dict:
+                raise ValueError(
+                    f"Rank {rank} has appeared in both subgroup {rank_to_ranks_dict[rank]} and {ranks}"
+                )
+            rank_to_ranks_dict[rank] = ranks
+            if my_rank == rank:
+                cur_subgroup = subgroup
+                #logger.info("Rank %s is assigned to subgroup %s", rank, ranks)
+
+    return cur_subgroup, subgroups

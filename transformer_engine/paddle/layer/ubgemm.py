@@ -6,12 +6,15 @@
 from typing import Dict, Tuple, Union, Optional, Literal
 from enum import Enum, auto
 import os
-import socket
 import warnings
-import paddle
 
+import socket
+import fcntl
+import struct
+
+import paddle
 from transformer_engine import transformer_engine_paddle as tex
-from ..distributed import get_distributed_world_size
+from ..distributed import get_distributed_world_size, new_subgroups_by_enumeration
 from .base import expand_workspace
 
 __all__ = ["initialize_ub", "destroy_ub"]
@@ -89,49 +92,90 @@ class _UBufGemmManager: #pylint: disable=too-few-public-methods
                 + "CUDA Multicast. Launch app with UB_SKIPMC=1 to try CUDA IPC instead."
             )
 
-        assert paddle.distributed.is_initialized(), 'Have you run with "python -m paddle.distributed.launch"?'
-        world_group = paddle.distributed.new_group(backend="nccl")
+        assert (
+            paddle.distributed.is_initialized()
+        ), 'Have you run with "python -m paddle.distributed.launch"?' "paddle.distributed must be initialized before Userbuffers"
+        bootstrap_backend = "nccl" #paddle only support NCCL for now
+
+        world_group = paddle.distributed.new_group(backend=bootstrap_backend)
         world_rank = paddle.distributed.get_rank(world_group)
         world_size = get_distributed_world_size(world_group)
 
-        assert shape[0] % tp_size == 0, (
-            f"Given shape [SxB, H]={shape}, SxB({shape[0]}) can't be divided "
-            f"exactly by sequence parallelism {tp_size}"
+        # We have single-node NVLink so we can color based on physical node hostnames.
+        # NOTE: If the user specified a valid network interface for NCCL or GLOO, use the host
+        #       address on that interface instead of the hostname. Otherwise, allow the user to
+        #       set a network interface via NVTE_UB_SOCKET_IFNAME variable. This can help avoid
+        #       issues when  different hosts have the same hostname on managed clusters.
+        mydomain = socket.gethostname()
+        ifname = os.getenv(
+            f"{bootstrap_backend.upper()}_SOCKET_IFNAME", os.getenv("NVTE_UB_SOCKET_IFNAME")
         )
+        if ifname is not None:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                mydomain = socket.inet_ntoa(
+                    fcntl.ioctl(
+                        s.fileno(), 0x8915, struct.pack("256s", ifname[:15].encode("UTF-8"))
+                    )[20:24]
+                )
+            except OSError as err:
+                raise OSError(f"Invalid network interface: {ifname}") from err
+            finally:
+                s.close()
 
-        # Construct an intra-node communicator -- this should include ALL ranks in the node
-        # NOTE: This may be different than the tensor-parallel group (e.g. two TP groups in a node),
-        #       in which case the local_size we get below will not be equal to the tp_size given
-        #       by the user. Userbuffers internally accounts for this.
-        hostnames = []
-        hostname = socket.gethostname()
-        paddle.distributed.all_gather_object(hostnames, hostname)
-        intra_node_ranks = []
-        for i, host in enumerate(hostnames):
-            if host == hostname:
-                intra_node_ranks.append(i)
-        if len(intra_node_ranks) == world_size:
-            intra_node_group = world_group
+        # Allgather the domain colors across ranks and reduce to a list of unique domains
+        domain_per_rank_list = []
+        paddle.distributed.all_gather_object(domain_per_rank_list, mydomain, world_group)
+        unique_domains = []
+        for domain in domain_per_rank_list:
+            if domain not in unique_domains:
+                unique_domains.append(domain)
+        num_domains = len(unique_domains)
+
+        if num_domains > 1:
+            # DP/TP model replicated on multiple NVLink domains
+            ranks_per_domain_list = [[] for _ in range(num_domains)]
+            mydomain_idx = -1
+            for i, domain in enumerate(domain_per_rank_list):
+                domain_idx = unique_domains.index(domain)
+                ranks_per_domain_list[domain_idx].append(i)
+                if domain == mydomain:
+                    mydomain_idx = domain_idx
+            assert mydomain_idx >= 0, "Internal TE error!"
+
+            intra_domain_group, _ = new_subgroups_by_enumeration(
+                ranks_per_domain_list, backend=bootstrap_backend
+            )
+            local_rank = paddle.distributed.get_rank(intra_domain_group)
+            local_size = paddle.distributed.get_world_size(intra_domain_group)
+
+            inter_domain_group, _ = new_subgroups_by_enumeration(
+                [list(ranks) for ranks in zip(*ranks_per_domain_list)],
+                backend=bootstrap_backend,
+            )
+        else:
+            # TP model on single NVLink domain, no replication, no data-parallelism
+            mydomain_idx = 0
             local_rank = world_rank
             local_size = world_size
-        else:
-            intra_node_group = paddle.distributed.new_group(backend="nccl", ranks=intra_node_ranks)
-            local_rank = paddle.distributed.get_rank(intra_node_group)
-            local_size = paddle.distributed.get_world_size(intra_node_group)
+            intra_domain_group = world_group
+            inter_domain_group = paddle.distributed.new_group([])
 
         node_id = world_rank // local_size
         num_nodes = world_size // local_size
+        if world_rank == 0:
+            print(f"!!! [UB] Number of NVLink domains: {num_domains}\n", end="", flush=True)
         if local_rank == 0:
             print(
-                f"Found {num_nodes} physical node{'s' if num_nodes > 1 else ''}\n"
-                + f"Global ranks on node {node_id}: {intra_node_ranks}\n",
-                end='',
-                flush=True
+                f"!!! [UB] Global ranks on domain {mydomain_idx}: {intra_domain_group}\n",
+                end="",
+                flush=True,
             )
 
         self.ub_pgs = {
-            "world": world_group,      #static char EXT_COMM_WORLD[] = "world";
-            "intra": intra_node_group, #static char EXT_COMM_INTRA[] = "intra";
+            "world": world_group,        #define EXT_COMM_WORLD "world"
+            "intra": intra_domain_group, #define EXT_COMM_INTRA "intra"
+            "inter": inter_domain_group, #define EXT_COMM_INTER "inter"
         }
 
         # Increase the workspace by the number of maximum concurrent streams
